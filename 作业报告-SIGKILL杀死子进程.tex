@@ -1,0 +1,459 @@
+\documentclass[12pt,a4paper]{ctexart}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage{booktabs}
+\usetikzlibrary{shapes.geometric, arrows, positioning}
+
+\geometry{left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+
+% 代码高亮设置
+\lstset{
+    language=C,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{gray}\itshape,
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    stepnumber=1,
+    numbersep=8pt,
+    backgroundcolor=\color{gray!10},
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    frame=single,
+    tabsize=4,
+    captionpos=b,
+    breaklines=true,
+    breakatwhitespace=false,
+    escapeinside={\%*}{*)},
+    xleftmargin=2em,
+    xrightmargin=2em,
+    aboveskip=1em,
+}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+}
+
+\title{\textbf{UNIX V6++ 信号处理实验报告（二）\\父进程使用 SIGKILL 杀死子进程}}
+\author{}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{程序功能说明}
+
+本程序演示了父进程如何使用 \texttt{kill()} 系统调用发送 \textbf{SIGKILL} 信号来强制终止子进程。
+
+\subsection{功能要求}
+
+\begin{enumerate}
+    \item[✓] 父进程创建一个子进程
+    \item[✓] fork 返回后，子进程进入无限循环
+    \item[✓] 父进程执行 kill 系统调用，用 SIGKILL 信号杀死子进程
+\end{enumerate}
+
+\section{程序实现}
+
+\subsection{核心代码}
+
+文件位置：\texttt{src/program/kill\_child.c}
+
+\begin{lstlisting}[caption={kill\_child.c - 完整实现}]
+#include <stdio.h>
+#include <sys.h>
+
+int main1(int argc, char* argv[])
+{
+    int pid = fork();
+
+    if (pid == 0) /* 子进程 */
+    {
+        printf("[Child] PID: %d - Entering infinite loop...\n", getpid());
+        printf("[Child] Waiting to be killed by parent.\n");
+
+        // 子进程无限循环，等待被杀死
+        while (1)
+        {
+            // 空循环
+        }
+    }
+    else if (pid > 0) /* 父进程 */
+    {
+        printf("[Parent] PID: %d - Created child with PID: %d\n",
+               getpid(), pid);
+
+        // 等待 2 秒，确保子进程已经开始运行
+        printf("[Parent] Waiting 2 seconds before killing child...\n");
+        sleep(2);
+
+        // 发送 SIGKILL 信号杀死子进程
+        printf("[Parent] Sending SIGKILL to child (PID: %d)...\n", pid);
+        int result = kill(pid, SIGKILL);
+
+        if (result == -1)
+        {
+            printf("[Parent] ERROR: Failed to send SIGKILL!\n");
+            return -1;
+        }
+        else
+        {
+            printf("[Parent] SIGKILL sent successfully.\n");
+        }
+
+        // 等待子进程结束并获取退出状态
+        int status;
+        int wpid = wait(&status);
+        printf("[Parent] Child process (PID: %d) has been terminated.\n",
+               wpid);
+        printf("[Parent] Child exit status: %d\n", status);
+        printf("[Parent] Done.\n");
+    }
+    else /* fork 失败 */
+    {
+        printf("ERROR: Fork failed!\n");
+        return -1;
+    }
+
+    return 0;
+}
+\end{lstlisting}
+
+\subsection{程序流程图}
+
+\begin{center}
+\begin{tikzpicture}[
+    node distance=1.5cm,
+    startstop/.style={rectangle, rounded corners, minimum width=3cm, minimum height=1cm, text centered, draw=black, fill=red!20},
+    process/.style={rectangle, minimum width=3cm, minimum height=1cm, text centered, draw=black, fill=blue!20},
+    decision/.style={diamond, minimum width=3cm, minimum height=1cm, text centered, draw=black, fill=green!20},
+    arrow/.style={thick,->,>=stealth}
+]
+
+\node (start) [startstop] {主进程启动};
+\node (fork) [process, below of=start] {fork()};
+\node (parent) [process, below left of=fork, xshift=-2cm, yshift=-1cm] {父进程};
+\node (child) [process, below right of=fork, xshift=2cm, yshift=-1cm] {子进程};
+
+\node (p1) [process, below of=parent] {打印信息};
+\node (p2) [process, below of=p1] {sleep(2)};
+\node (p3) [process, below of=p2] {kill(pid, SIGKILL)};
+\node (p4) [process, below of=p3] {wait(\&status)};
+\node (p5) [startstop, below of=p4] {结束};
+
+\node (c1) [process, below of=child] {打印 PID};
+\node (c2) [process, below of=c1] {while(1) 循环};
+\node (c3) [startstop, below of=c2] {被杀死};
+
+\draw [arrow] (start) -- (fork);
+\draw [arrow] (fork) -| (parent);
+\draw [arrow] (fork) -| (child);
+\draw [arrow] (parent) -- (p1);
+\draw [arrow] (p1) -- (p2);
+\draw [arrow] (p2) -- (p3);
+\draw [arrow] (p3) -- (p4);
+\draw [arrow] (p4) -- (p5);
+\draw [arrow] (child) -- (c1);
+\draw [arrow] (c1) -- (c2);
+\draw [arrow] (c2) -- (c3);
+\draw [arrow, dashed, red] (p3) -- (c3);
+
+\end{tikzpicture}
+\end{center}
+
+\section{关键技术点}
+
+\subsection{系统调用}
+
+\subsubsection{fork() - 创建子进程}
+
+\begin{lstlisting}
+int pid = fork();
+\end{lstlisting}
+
+\textbf{返回值：}
+\begin{itemize}
+    \item 父进程中：返回子进程的 PID ($>$ 0)
+    \item 子进程中：返回 0
+    \item 失败：返回 -1
+\end{itemize}
+
+\subsubsection{kill() - 发送信号}
+
+\begin{lstlisting}
+int kill(int pid, int signal);
+\end{lstlisting}
+
+\textbf{参数：}
+\begin{itemize}
+    \item \texttt{pid}：目标进程的 PID
+    \item \texttt{signal}：要发送的信号编号（这里是 SIGKILL）
+\end{itemize}
+
+\textbf{返回值：}
+\begin{itemize}
+    \item 成功：0
+    \item 失败：-1
+\end{itemize}
+
+\subsubsection{wait() - 等待子进程结束}
+
+\begin{lstlisting}
+int wait(int* status);
+\end{lstlisting}
+
+\begin{itemize}
+    \item \textbf{功能}：阻塞等待任一子进程结束，回收其资源
+    \item \textbf{返回值}：已结束子进程的 PID
+    \item \textbf{参数}：\texttt{status} 保存子进程的退出状态
+\end{itemize}
+
+\subsection{SIGKILL 信号特性}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{特性} & \textbf{说明} \\
+\midrule
+信号编号 & 9 (在 sys.h 中定义) \\
+能否被捕获 & ✗ 不能 \\
+能否被忽略 & ✗ 不能 \\
+能否被阻塞 & ✗ 不能 \\
+用途 & 强制终止进程（终极杀手） \\
+\bottomrule
+\end{tabular}
+\caption{SIGKILL 信号特性}
+\end{table}
+
+\subsubsection{SIGKILL vs SIGINT 对比}
+
+\begin{lstlisting}[caption={信号捕获对比}]
+// SIGINT (Ctrl+C) - 可以被捕获
+signal(SIGINT, my_handler);  // 可以捕获并自定义处理
+
+// SIGKILL (kill -9) - 无法被捕获
+signal(SIGKILL, my_handler); // 系统不允许，SIGKILL 必定杀死进程
+\end{lstlisting}
+
+\section{运行效果}
+
+\subsection{预期输出}
+
+\begin{verbatim}
+[Parent] PID: 5 - Created child with PID: 6
+[Child] PID: 6 - Entering infinite loop...
+[Child] Waiting to be killed by parent.
+[Parent] Waiting 2 seconds before killing child...
+[Parent] Sending SIGKILL to child (PID: 6)...
+[Parent] SIGKILL sent successfully.
+[Parent] Child process (PID: 6) has been terminated.
+[Parent] Child exit status: 9
+[Parent] Done.
+\end{verbatim}
+
+\subsection{执行步骤}
+
+\begin{enumerate}
+    \item \textbf{主进程调用 fork()}
+    \begin{itemize}
+        \item 创建子进程（PID: 6）
+        \item 父进程得到子进程 PID
+    \end{itemize}
+
+    \item \textbf{子进程执行}
+    \begin{itemize}
+        \item 打印自己的 PID
+        \item 进入 \texttt{while(1)} 无限循环
+    \end{itemize}
+
+    \item \textbf{父进程执行}
+    \begin{itemize}
+        \item 打印子进程 PID
+        \item 休眠 2 秒（确保子进程开始运行）
+        \item 调用 \texttt{kill(6, SIGKILL)} 发送 SIGKILL 信号
+    \end{itemize}
+
+    \item \textbf{子进程被杀死}
+    \begin{itemize}
+        \item 内核强制终止子进程
+        \item 无法执行任何清理代码
+    \end{itemize}
+
+    \item \textbf{父进程回收}
+    \begin{itemize}
+        \item \texttt{wait()} 返回子进程 PID
+        \item 获取退出状态（通常为信号编号）
+    \end{itemize}
+\end{enumerate}
+
+\section{技术对比}
+
+\subsection{与 immortal 程序的对比}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{cccc}
+\toprule
+\textbf{程序} & \textbf{信号} & \textbf{能否捕获} & \textbf{能否存活} \\
+\midrule
+immortal & SIGINT (2) & ✓ 可以 & ✓ 不死 \\
+kill\_child & SIGKILL (9) & ✗ 不能 & ✗ 必死 \\
+\bottomrule
+\end{tabular}
+\caption{两个程序的对比}
+\end{table}
+
+\subsection{可捕获信号 vs 不可捕获信号}
+
+\textbf{可捕获信号（示例）：}
+\begin{itemize}
+    \item SIGINT (2) - Ctrl+C
+    \item SIGTERM (15) - 终止请求
+    \item SIGUSR1 (10) - 用户自定义信号 1
+    \item SIGUSR2 (12) - 用户自定义信号 2
+\end{itemize}
+
+\textbf{不可捕获信号：}
+\begin{itemize}
+    \item \textbf{SIGKILL (9)} - 强制杀死
+    \item \textbf{SIGSTOP (19)} - 强制暂停
+\end{itemize}
+
+\section{实际应用场景}
+
+\subsection{SIGKILL 的使用场景}
+
+\subsubsection{场景 1：进程无响应}
+
+进程挂死，不响应 SIGTERM
+
+\begin{lstlisting}[language=bash]
+kill -15 1234   # 先尝试友好终止
+sleep 5
+kill -9 1234    # 如果还活着，强制杀死
+\end{lstlisting}
+
+\subsubsection{场景 2：紧急情况}
+
+需要立即终止进程，无法等待清理
+
+\begin{lstlisting}[language=bash]
+kill -9 <pid>   # 立即终止
+\end{lstlisting}
+
+\subsubsection{场景 3：系统管理}
+
+清理僵尸进程或失控进程
+
+\subsection{最佳实践}
+
+\textbf{推荐的进程终止流程：}
+
+\begin{lstlisting}[caption={优雅终止进程}]
+// 1. 先发送 SIGTERM（温柔终止）
+kill(pid, SIGTERM);
+sleep(5);
+
+// 2. 检查进程是否还存在
+if (process_exists(pid)) {
+    // 3. 如果还存在，使用 SIGKILL（强制终止）
+    kill(pid, SIGKILL);
+}
+\end{lstlisting}
+
+\section{编译与运行}
+
+\subsection{编译}
+
+程序已集成到 Makefile 中：
+
+\begin{lstlisting}[language=bash]
+cd /home/user/UNIX-V6-/src/program
+make kill_child.exe
+\end{lstlisting}
+
+\subsection{运行}
+
+\begin{lstlisting}[language=bash]
+./objs/kill_child.exe
+\end{lstlisting}
+
+或在 V6++ 系统中：
+
+\begin{lstlisting}[language=bash]
+/zbin1#kill_child
+\end{lstlisting}
+
+\section{技术总结}
+
+\subsection{关键知识点}
+
+\begin{enumerate}
+    \item \textbf{进程创建}：fork() 系统调用的使用和返回值处理
+    \item \textbf{进程通信}：使用信号作为进程间通信机制
+    \item \textbf{信号发送}：kill() 系统调用的使用
+    \item \textbf{进程回收}：wait() 系统调用防止僵尸进程
+    \item \textbf{信号特性}：理解 SIGKILL 的不可捕获性
+\end{enumerate}
+
+\subsection{与 immortal 程序的联系}
+
+这两个程序形成了完整的信号处理对比：
+
+\begin{itemize}
+    \item \textbf{immortal.c}：演示如何捕获 SIGINT 并拒绝退出
+    \item \textbf{kill\_child.c}：演示 SIGKILL 无法被捕获，必定杀死进程
+\end{itemize}
+
+这体现了 UNIX 信号机制的两个极端：
+\begin{itemize}
+    \item \textbf{可捕获信号}：给进程"说不"的权利
+    \item \textbf{不可捕获信号}：系统的最终控制权
+\end{itemize}
+
+\section{常见问题}
+
+\subsection{Q1: 为什么子进程需要无限循环？}
+
+\textbf{A:} 为了演示子进程在"正常运行"时被强制杀死。如果子进程立即退出，就无法体现 SIGKILL 的作用。
+
+\subsection{Q2: 为什么父进程要 sleep(2)？}
+
+\textbf{A:} 确保子进程已经开始执行。如果立即发送 SIGKILL，可能在子进程还没打印信息时就被杀死。
+
+\subsection{Q3: 为什么一定要调用 wait()？}
+
+\textbf{A:} 回收子进程资源。如果不调用 wait()，子进程会变成僵尸进程（zombie），浪费系统资源。
+
+\subsection{Q4: 可以在子进程中捕获 SIGKILL 吗？}
+
+\textbf{A:} \textbf{不可以}。以下代码无效：
+
+\begin{lstlisting}
+signal(SIGKILL, my_handler);  // 系统会忽略这个调用
+\end{lstlisting}
+
+\vspace{2em}
+\noindent\rule{\textwidth}{0.4pt}
+
+\begin{center}
+\textbf{开发环境：} UNIX V6++ 操作系统 \\
+\textbf{使用系统调用：} fork(), kill(), wait(), getpid(), sleep(), printf() \\
+\textbf{测试状态：} ✓ 通过编译，已集成到构建系统
+\end{center}
+
+\end{document}
