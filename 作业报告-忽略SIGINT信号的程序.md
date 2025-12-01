@@ -37,41 +37,57 @@
 #include <stdio.h>
 #include <sys.h>
 
-// SIGINT 信号处理函数
-void sigint_handler()
+// SIGINT 信号处理函数 - 必须接受 int 参数
+void sigint_handler(int signo)
 {
-    printf("\n[!] 捕获到 SIGINT 信号 (Ctrl+C)，但我拒绝退出！\n");
-    printf("[*] 提示：使用 'kill -9 %d' 可以强制终止我\n", getpid());
+    if (signo == SIGINT)
+    {
+        printf("\n[!] Caught SIGINT (Ctrl+C), but I refuse to die!\n");
+    }
 }
 
 int main1(int argc, char* argv[])
 {
-    int count = 0;
-
     // 注册信号处理函数，捕获 SIGINT 但不退出
-    signal(SIGINT, sigint_handler);
+    if (signal(SIGINT, sigint_handler) == -1)
+    {
+        printf("Signal registration failed!\n");
+        return -1;
+    }
 
-    printf("========================================\n");
-    printf("  不死程序 (Immortal Process)\n");
-    printf("========================================\n");
-    printf("[*] 进程 ID: %d\n", getpid());
-    printf("[*] 按 Ctrl+C 试试看，我不会退出！\n");
-    printf("[*] 要终止我，请使用: kill -9 %d\n", getpid());
-    printf("========================================\n\n");
+    printf("Immortal Process (PID: %d)\n", getpid());
+    printf("Press Ctrl+C to test - I won't die!\n");
+    printf("Use 'kill -9 %d' to kill me.\n", getpid());
+    printf("Starting...\n\n");
 
     // 主循环：持续运行
     while(1)
     {
-        count++;
-        printf("[%d] 我还活着... (运行中: %d 秒)\n", getpid(), count);
-        sleep(1);
+        sleep(10);
+        printf("Still alive (PID: %d)\n", getpid());
     }
 
     return 0;
 }
 ```
 
-### 3.2 实现方式
+### 3.2 关键要点（重要！）
+
+**⚠️ 信号处理函数签名**
+
+在 UNIX V6++ 系统中，信号处理函数**必须接受一个 int 参数**：
+
+```c
+// ✅ 正确
+void sigint_handler(int signo)
+
+// ❌ 错误（会导致信号无法正确捕获）
+void sigint_handler()
+```
+
+这个参数表示接收到的信号编号，即使不使用也必须声明。
+
+### 3.3 实现方式
 
 本程序提供了两种实现方式：
 
@@ -117,25 +133,27 @@ $(TARGET)\immortal.exe : immortal.c
 ## 五、运行效果
 
 ```
-========================================
-  不死程序 (Immortal Process)
-========================================
-[*] 进程 ID: 42
-[*] 按 Ctrl+C 试试看，我不会退出！
-[*] 要终止我，请使用: kill -9 42
-========================================
+Immortal Process (PID: 42)
+Press Ctrl+C to test - I won't die!
+Use 'kill -9 42' to kill me.
+Starting...
 
-[42] 我还活着... (运行中: 1 秒)
-[42] 我还活着... (运行中: 2 秒)
+Still alive (PID: 42)
+Still alive (PID: 42)
 ^C
-[!] 捕获到 SIGINT 信号 (Ctrl+C)，但我拒绝退出！
-[*] 提示：使用 'kill -9 42' 可以强制终止我
-[42] 我还活着... (运行中: 3 秒)
+[!] Caught SIGINT (Ctrl+C), but I refuse to die!
+Still alive (PID: 42)
+Still alive (PID: 42)
 ```
 
 **测试结果：**
 - ✅ 按 Ctrl+C：程序捕获信号，显示提示，继续运行
 - ✅ 使用 `kill -9 42`：程序被强制终止
+
+**调试经验：**
+- ⚠️ 最初版本因信号处理函数缺少 int 参数导致无法正确捕获信号
+- ⚠️ 输出过于频繁会导致显示混乱和系统调试信息干扰
+- ✅ 参考系统自带的 sigTest.c 找到了正确的实现方式
 
 ## 六、技术总结
 
