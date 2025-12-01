@@ -15,6 +15,9 @@ void sigint_handler(int signo)
 	if (signo == SIGINT)
 	{
 		printf("\n[!] Caught SIGINT (Ctrl+C), but I refuse to die!\n");
+		// 重要：在 UNIX V6 中，signal() 是一次性的
+		// 必须在处理函数中重新注册，否则第二次 Ctrl+C 会终止进程
+		signal(SIGINT, sigint_handler);
 	}
 }
 

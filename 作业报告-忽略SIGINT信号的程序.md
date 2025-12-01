@@ -43,6 +43,9 @@ void sigint_handler(int signo)
     if (signo == SIGINT)
     {
         printf("\n[!] Caught SIGINT (Ctrl+C), but I refuse to die!\n");
+        // 重要：在 UNIX V6 中，signal() 是一次性的
+        // 必须在处理函数中重新注册，否则第二次 Ctrl+C 会终止进程
+        signal(SIGINT, sigint_handler);
     }
 }
 
@@ -73,7 +76,7 @@ int main1(int argc, char* argv[])
 
 ### 3.2 关键要点（重要！）
 
-**⚠️ 信号处理函数签名**
+**⚠️ 要点 1：信号处理函数签名**
 
 在 UNIX V6++ 系统中，信号处理函数**必须接受一个 int 参数**：
 
@@ -86,6 +89,32 @@ void sigint_handler()
 ```
 
 这个参数表示接收到的信号编号，即使不使用也必须声明。
+
+**⚠️ 要点 2：signal() 是一次性的（最关键！）**
+
+UNIX V6 的 `signal()` 系统调用是**一次性的**：
+
+```c
+// 在 src/proc/Process.cpp 的 PSig() 函数中（第 481 行）：
+u.u_signal[signal] = 0;  // 信号处理后自动重置为 0（默认行为）
+```
+
+**后果：**
+- 第 1 次按 Ctrl+C：✅ 调用信号处理函数
+- 第 2 次按 Ctrl+C：❌ 进程被终止（因为信号处理已重置为默认）
+
+**解决方案：**
+必须在信号处理函数中**重新注册**信号处理：
+
+```c
+void sigint_handler(int signo)
+{
+    printf("Caught signal!\n");
+    signal(SIGINT, sigint_handler);  // ← 必须重新注册！
+}
+```
+
+这是经典 UNIX 系统（V6/V7）的标准行为，现代 UNIX 使用 `sigaction()` 来避免这个问题。
 
 ### 3.3 实现方式
 
@@ -151,9 +180,22 @@ Still alive (PID: 42)
 - ✅ 使用 `kill -9 42`：程序被强制终止
 
 **调试经验：**
-- ⚠️ 最初版本因信号处理函数缺少 int 参数导致无法正确捕获信号
-- ⚠️ 输出过于频繁会导致显示混乱和系统调试信息干扰
-- ✅ 参考系统自带的 sigTest.c 找到了正确的实现方式
+
+1. **问题 1：信号处理函数签名错误**
+   - 现象：按 Ctrl+C 后程序立即退出
+   - 原因：函数定义为 `void handler()` 而非 `void handler(int signo)`
+   - 解决：参考 sigTest.c 添加 int 参数
+
+2. **问题 2：第二次 Ctrl+C 导致退出（最难排查）**
+   - 现象：第一次 Ctrl+C 被捕获，第二次直接退出
+   - 原因：UNIX V6 的 signal() 是一次性的（Process.cpp:481）
+   - 解决：在信号处理函数中调用 `signal(SIGINT, sigint_handler)` 重新注册
+   - 教训：经典 UNIX 与现代 UNIX 的信号机制差异
+
+3. **问题 3：输出混乱**
+   - 现象：终端显示大量调试信息和进程状态
+   - 原因：输出过于频繁触发系统调试
+   - 解决：降低输出频率（1秒 → 10秒）
 
 ## 六、技术总结
 
@@ -161,8 +203,10 @@ Still alive (PID: 42)
 
 1. **信号处理机制**：`signal(int sig, void (*handler)())` 系统调用
 2. **信号类型**：可捕获信号 vs 不可捕获信号
-3. **进程控制**：getpid()、sleep()、while 循环
-4. **裸机编程**：无标准库环境下的系统编程
+3. **经典 UNIX 特性**：signal() 的一次性行为（需要重新注册）
+4. **进程控制**：getpid()、sleep()、while 循环
+5. **裸机编程**：无标准库环境下的系统编程
+6. **内核源码分析**：通过阅读 Process.cpp 理解信号处理的内部实现
 
 ### 6.2 实际应用场景
 
