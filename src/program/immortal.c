@@ -9,43 +9,34 @@
  *   - 需要使用 kill -9 <pid> 或 SIGKILL 信号才能强制终止
  */
 
-// SIGINT 信号处理函数
-void sigint_handler()
+// SIGINT 信号处理函数 - 必须接受 int 参数
+void sigint_handler(int signo)
 {
-	printf("\n[!] 捕获到 SIGINT 信号 (Ctrl+C)，但我拒绝退出！\n");
-	printf("[*] 提示：使用 'kill -9 %d' 可以强制终止我\n", getpid());
+	if (signo == SIGINT)
+	{
+		printf("\n[!] Caught SIGINT (Ctrl+C), but I refuse to die!\n");
+	}
 }
 
 int main1(int argc, char* argv[])
 {
-	int count = 0;
+	// 注册信号处理函数，捕获 SIGINT 但不退出
+	if (signal(SIGINT, sigint_handler) == -1)
+	{
+		printf("Signal registration failed!\n");
+		return -1;
+	}
 
-	// 方式1：注册信号处理函数，捕获但不退出
-	signal(SIGINT, sigint_handler);
-
-	// 方式2（可选）：完全忽略 SIGINT 信号
-	// signal(SIGINT, SIG_IGN);
-
-	printf("========================================\n");
-	printf("  不死程序 (Immortal Process)\n");
-	printf("========================================\n");
-	printf("[*] 进程 ID: %d\n", getpid());
-	printf("[*] 按 Ctrl+C 试试看，我不会退出！\n");
-	printf("[*] 要终止我，请使用: kill -9 %d\n", getpid());
-	printf("========================================\n\n");
+	printf("Immortal Process (PID: %d)\n", getpid());
+	printf("Press Ctrl+C to test - I won't die!\n");
+	printf("Use 'kill -9 %d' to kill me.\n", getpid());
+	printf("Starting...\n\n");
 
 	// 主循环：持续运行
 	while(1)
 	{
-		count++;
-		printf("[%d] 我还活着... (运行中: %d 秒)\n", getpid(), count);
-		sleep(1);
-
-		// 每10秒提示一次
-		if (count % 10 == 0)
-		{
-			printf("\n[*] 提示：尝试按 Ctrl+C，你会发现我不会死掉！\n\n");
-		}
+		sleep(10);
+		printf("Still alive (PID: %d)\n", getpid());
 	}
 
 	return 0;
