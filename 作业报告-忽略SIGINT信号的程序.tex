@@ -1,0 +1,324 @@
+\documentclass[12pt,a4paper]{ctexart}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows}
+
+\geometry{left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+
+% 代码高亮设置
+\lstset{
+    language=C,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{gray}\itshape,
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    stepnumber=1,
+    numbersep=8pt,
+    backgroundcolor=\color{gray!10},
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    frame=single,
+    tabsize=4,
+    captionpos=b,
+    breaklines=true,
+    breakatwhitespace=false,
+    escapeinside={\%*}{*)},
+    xleftmargin=2em,
+    xrightmargin=2em,
+    aboveskip=1em,
+}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+}
+
+\title{\textbf{UNIX V6++ 信号处理实验报告（一）\\忽略 SIGINT 信号的不死进程}}
+\author{}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{仓库说明}
+
+本仓库是 \textbf{UNIX V6++} 操作系统的实现代码，这是一个基于经典 UNIX Version 6 的教学操作系统项目。系统包含完整的内核实现，包括：
+
+\begin{itemize}
+    \item \textbf{进程管理}：进程调度、进程间通信
+    \item \textbf{内存管理}：分页机制、内存交换
+    \item \textbf{文件系统}：inode、目录管理
+    \item \textbf{信号机制}：支持 32 种标准 UNIX 信号
+    \item \textbf{设备驱动}：键盘、鼠标、磁盘等
+\end{itemize}
+
+\section{实现原理}
+
+\subsection{信号机制基础}
+
+在 UNIX 系统中，按下 \textbf{Ctrl+C} 会向前台进程发送 \textbf{SIGINT (信号 2)} 信号，默认行为是终止进程。但该信号可以被捕获和处理，程序可以选择忽略或自定义处理。
+
+\subsection{关键技术点}
+
+\subsubsection{可捕获的信号}
+
+\begin{itemize}
+    \item SIGINT (2) - Ctrl+C
+    \item SIGTERM (15) - 终止请求
+    \item SIGUSR1 (10) - 用户自定义信号 1
+    \item SIGUSR2 (12) - 用户自定义信号 2
+\end{itemize}
+
+\subsubsection{不可捕获的信号}
+
+\begin{itemize}
+    \item \textbf{SIGKILL (9)} - 强制杀死
+    \item \textbf{SIGSTOP (19)} - 强制暂停
+\end{itemize}
+
+\section{程序实现}
+
+\subsection{核心代码}
+
+文件位置：\texttt{src/program/immortal.c}
+
+\begin{lstlisting}[caption={immortal.c - 核心实现}]
+#include <stdio.h>
+#include <sys.h>
+
+// SIGINT 信号处理函数 - 必须接受 int 参数
+void sigint_handler(int signo)
+{
+    if (signo == SIGINT)
+    {
+        printf("\n[!] Caught SIGINT (Ctrl+C), but I refuse to die!\n");
+        // 重要：在 UNIX V6 中，signal() 是一次性的
+        // 必须在处理函数中重新注册，否则第二次 Ctrl+C 会终止进程
+        signal(SIGINT, sigint_handler);
+    }
+}
+
+int main1(int argc, char* argv[])
+{
+    // 注册信号处理函数，捕获 SIGINT 但不退出
+    if (signal(SIGINT, sigint_handler) == -1)
+    {
+        printf("Signal registration failed!\n");
+        return -1;
+    }
+
+    printf("Immortal Process (PID: %d)\n", getpid());
+    printf("Press Ctrl+C to test - I won't die!\n");
+    printf("Use 'kill -9 %d' to kill me.\n", getpid());
+    printf("Starting...\n\n");
+
+    // 主循环：持续运行
+    while(1)
+    {
+        sleep(10);
+        printf("Still alive (PID: %d)\n", getpid());
+    }
+
+    return 0;
+}
+\end{lstlisting}
+
+\subsection{关键要点}
+
+\subsubsection{要点 1：信号处理函数签名}
+
+在 UNIX V6++ 系统中，信号处理函数\textbf{必须接受一个 int 参数}：
+
+\begin{lstlisting}[caption={正确的信号处理函数签名}]
+// 正确
+void sigint_handler(int signo)
+
+// 错误（会导致信号无法正确捕获）
+void sigint_handler()
+\end{lstlisting}
+
+这个参数表示接收到的信号编号，即使不使用也必须声明。
+
+\subsubsection{要点 2：signal() 是一次性的（最关键！）}
+
+UNIX V6 的 \texttt{signal()} 系统调用是\textbf{一次性的}：
+
+\begin{lstlisting}[caption={Process.cpp 中的信号处理代码（第 481 行）}]
+// 在 src/proc/Process.cpp 的 PSig() 函数中：
+u.u_signal[signal] = 0;  // 信号处理后自动重置为 0（默认行为）
+\end{lstlisting}
+
+\textbf{后果：}
+\begin{itemize}
+    \item 第 1 次按 Ctrl+C：✓ 调用信号处理函数
+    \item 第 2 次按 Ctrl+C：✗ 进程被终止（因为信号处理已重置为默认）
+\end{itemize}
+
+\textbf{解决方案：}
+
+必须在信号处理函数中\textbf{重新注册}信号处理：
+
+\begin{lstlisting}[caption={在信号处理函数中重新注册}]
+void sigint_handler(int signo)
+{
+    printf("Caught signal!\n");
+    signal(SIGINT, sigint_handler);  // 必须重新注册！
+}
+\end{lstlisting}
+
+这是经典 UNIX 系统（V6/V7）的标准行为，现代 UNIX 使用 \texttt{sigaction()} 来避免这个问题。
+
+\subsection{实现方式}
+
+本程序提供了两种实现方式：
+
+\textbf{方式 1：自定义处理函数（已采用）}
+
+\begin{lstlisting}
+signal(SIGINT, sigint_handler);
+\end{lstlisting}
+
+\begin{itemize}
+    \item 捕获 SIGINT 信号
+    \item 执行自定义处理函数
+    \item 显示提示信息但不退出
+\end{itemize}
+
+\textbf{方式 2：完全忽略信号}
+
+\begin{lstlisting}
+signal(SIGINT, SIG_IGN);
+\end{lstlisting}
+
+\begin{itemize}
+    \item 直接忽略 SIGINT 信号
+    \item 按 Ctrl+C 没有任何反应
+\end{itemize}
+
+\section{构建系统集成}
+
+\subsection{修改 Makefile}
+
+在 \texttt{src/program/Makefile} 中添加编译规则：
+
+\begin{lstlisting}[language=make,caption={Makefile 配置}]
+# 1. 添加到目标列表
+SHELL_OBJS = ... \
+             $(TARGET)\immortal.exe
+
+# 2. 添加编译规则
+$(TARGET)\immortal.exe : immortal.c
+    $(CC) $(CFLAGS) -I"$(INCLUDE)" -I"$(LIB_INCLUDE)" \
+          $< -e _main1 $(V6++LIB) -o $@
+    copy $(TARGET)\immortal.exe $(MAKEIMAGEPATH)\$(BIN)\immortal
+\end{lstlisting}
+
+\subsection{编译参数说明}
+
+\begin{itemize}
+    \item \texttt{-nostdlib -nostartfiles -nostdinc}：裸机编译，不依赖标准库
+    \item \texttt{-e \_main1}：指定入口点为 \texttt{main1} 函数（V6++ 规范）
+    \item \texttt{\$(V6++LIB)}：链接 V6++ 系统库，提供 signal、printf 等函数
+\end{itemize}
+
+\section{运行效果}
+
+\subsection{预期输出}
+
+\begin{verbatim}
+Immortal Process (PID: 42)
+Press Ctrl+C to test - I won't die!
+Use 'kill -9 42' to kill me.
+Starting...
+
+Still alive (PID: 42)
+Still alive (PID: 42)
+^C
+[!] Caught SIGINT (Ctrl+C), but I refuse to die!
+Still alive (PID: 42)
+Still alive (PID: 42)
+\end{verbatim}
+
+\subsection{测试结果}
+
+\begin{itemize}
+    \item[✓] 按 Ctrl+C：程序捕获信号，显示提示，继续运行
+    \item[✓] 使用 \texttt{kill -9 42}：程序被强制终止
+\end{itemize}
+
+\subsection{调试经验}
+
+\subsubsection{问题 1：信号处理函数签名错误}
+
+\begin{itemize}
+    \item \textbf{现象}：按 Ctrl+C 后程序立即退出
+    \item \textbf{原因}：函数定义为 \texttt{void handler()} 而非 \texttt{void handler(int signo)}
+    \item \textbf{解决}：参考 sigTest.c 添加 int 参数
+\end{itemize}
+
+\subsubsection{问题 2：第二次 Ctrl+C 导致退出（最难排查）}
+
+\begin{itemize}
+    \item \textbf{现象}：第一次 Ctrl+C 被捕获，第二次直接退出
+    \item \textbf{原因}：UNIX V6 的 signal() 是一次性的（Process.cpp:481）
+    \item \textbf{解决}：在信号处理函数中调用 \texttt{signal(SIGINT, sigint\_handler)} 重新注册
+    \item \textbf{教训}：经典 UNIX 与现代 UNIX 的信号机制差异
+\end{itemize}
+
+\subsubsection{问题 3：输出混乱}
+
+\begin{itemize}
+    \item \textbf{现象}：终端显示大量调试信息和进程状态
+    \item \textbf{原因}：输出过于频繁触发系统调试
+    \item \textbf{解决}：降低输出频率（1秒 → 10秒）
+\end{itemize}
+
+\section{技术总结}
+
+\subsection{关键知识点}
+
+\begin{enumerate}
+    \item \textbf{信号处理机制}：\texttt{signal(int sig, void (*handler)())} 系统调用
+    \item \textbf{信号类型}：可捕获信号 vs 不可捕获信号
+    \item \textbf{经典 UNIX 特性}：signal() 的一次性行为（需要重新注册）
+    \item \textbf{进程控制}：getpid()、sleep()、while 循环
+    \item \textbf{裸机编程}：无标准库环境下的系统编程
+    \item \textbf{内核源码分析}：通过阅读 Process.cpp 理解信号处理的内部实现
+\end{enumerate}
+
+\subsection{实际应用场景}
+
+\begin{itemize}
+    \item \textbf{服务器守护进程}：忽略 SIGINT，避免误操作关闭
+    \item \textbf{数据库系统}：捕获信号，优雅关闭（保存数据后退出）
+    \item \textbf{长时间任务}：防止用户误按 Ctrl+C 中断任务
+    \item \textbf{调试工具}：捕获所有信号用于调试分析
+\end{itemize}
+
+\section{补充说明}
+
+本次作业还顺带修复了 Makefile 中 \texttt{kill\_child.exe} 缺失的编译规则，确保所有程序都能正确编译。
+
+\vspace{1em}
+\noindent\rule{\textwidth}{0.4pt}
+
+\begin{center}
+\textbf{开发环境：} UNIX V6++ 操作系统 \\
+\textbf{编译工具：} gcc (裸机模式) \\
+\textbf{测试状态：} ✓ 通过编译，已集成到构建系统
+\end{center}
+
+\end{document}
