@@ -16,7 +16,7 @@ void sigint_handler()
 	printf("[*] 提示：使用 'kill -9 %d' 可以强制终止我\n", getpid());
 }
 
-int main(int argc, char* argv[])
+int main1(int argc, char* argv[])
 {
 	int count = 0;
 
