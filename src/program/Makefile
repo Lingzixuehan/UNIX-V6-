@@ -2,18 +2,18 @@
 # Makefile for all Unix V6++ programs
 #
 
-# 08„1¤70Ð7„1¤7„1¤7„1¤70‘7„1¤7‚6ñ0
+# ï¿½0ï¿½8ï¿½1ï¿½7ï¿½0ï¿½7ï¿½1ï¿½7ï¿½1ï¿½7ï¿½1ï¿½7ï¿½0ï¿½7ï¿½1ï¿½7ï¿½6ï¿½0
 .DEFAULT_GOAL := all
 
-#„1¤7„1¤7„1¤7ƒ7Ø7„1¤7„1¤7
+#ï¿½1ï¿½7ï¿½1ï¿½7ï¿½1ï¿½7ï¿½7ï¿½7ï¿½1ï¿½7ï¿½1ï¿½7
 CC = gcc
 LD = ld
 OBJDUMP = objdump
 
-#„1¤7„1¤7„1¤7„1¤7„1¤7„1¤7„1¤7„1¤7-nostartfiles
+#ï¿½1ï¿½7ï¿½1ï¿½7ï¿½1ï¿½7ï¿½1ï¿½7ï¿½1ï¿½7ï¿½1ï¿½7ï¿½1ï¿½7ï¿½1ï¿½7-nostartfiles
 CFLAGS = -w -O0 -g -nostdlib -nostartfiles -nostdinc -fno-builtin -fno-exceptions
 
-#0‘70†4„1¤7„1¤7„1¤7„1¤7
+#ï¿½0ï¿½7ï¿½0ï¿½4ï¿½1ï¿½7ï¿½1ï¿½7ï¿½1ï¿½7ï¿½1ï¿½7
 TARGET = .\objs
 V6++LIB = "..\lib\Lib_V6++.a"
 INCLUDE = .
@@ -48,7 +48,8 @@ SHELL_OBJS =$(TARGET)\cat.exe	\
 			$(TARGET)\fork.exe \
 			$(TARGET)\showStack.exe \
 			$(TARGET)\trivialProg.exe \
-			$(TARGET)\kill_child.exe
+			$(TARGET)\kill_child.exe \
+			$(TARGET)\immortal.exe
 
 #$(TARGET)\performance.exe
 			
@@ -143,6 +144,14 @@ $(TARGET)\showStack.exe :	showStack.c
 $(TARGET)\trivialProg.exe :	trivialProg.c
 	$(CC) $(CFLAGS) -I"$(INCLUDE)" -I"$(LIB_INCLUDE)"  $< -e _main1 $(V6++LIB) -o $@
 	copy $(TARGET)\trivialProg.exe $(MAKEIMAGEPATH)\$(BIN)\trivialProg
+
+$(TARGET)\kill_child.exe :	kill_child.c
+	$(CC) $(CFLAGS) -I"$(INCLUDE)" -I"$(LIB_INCLUDE)"  $< -e _main1 $(V6++LIB) -o $@
+	copy $(TARGET)\kill_child.exe $(MAKEIMAGEPATH)\$(BIN)\kill_child
+
+$(TARGET)\immortal.exe :	immortal.c
+	$(CC) $(CFLAGS) -I"$(INCLUDE)" -I"$(LIB_INCLUDE)"  $< -e _main1 $(V6++LIB) -o $@
+	copy $(TARGET)\immortal.exe $(MAKEIMAGEPATH)\$(BIN)\immortal
 
 clean:
 	del $(TARGET)\*.exe
