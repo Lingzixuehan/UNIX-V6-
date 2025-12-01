@@ -49,7 +49,8 @@ SHELL_OBJS =$(TARGET)\cat.exe	\
 			$(TARGET)\showStack.exe \
 			$(TARGET)\trivialProg.exe \
 			$(TARGET)\kill_child.exe \
-			$(TARGET)\immortal.exe
+			$(TARGET)\immortal.exe \
+			$(TARGET)\target.exe
 
 #$(TARGET)\performance.exe
 			
@@ -152,6 +153,10 @@ $(TARGET)\kill_child.exe :	kill_child.c
 $(TARGET)\immortal.exe :	immortal.c
 	$(CC) $(CFLAGS) -I"$(INCLUDE)" -I"$(LIB_INCLUDE)"  $< -e _main1 $(V6++LIB) -o $@
 	copy $(TARGET)\immortal.exe $(MAKEIMAGEPATH)\$(BIN)\immortal
+
+$(TARGET)\target.exe :	target.c
+	$(CC) $(CFLAGS) -I"$(INCLUDE)" -I"$(LIB_INCLUDE)"  $< -e _main1 $(V6++LIB) -o $@
+	copy $(TARGET)\target.exe $(MAKEIMAGEPATH)\$(BIN)\target
 
 clean:
 	del $(TARGET)\*.exe
