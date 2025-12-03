@@ -1,0 +1,139 @@
+#ifndef KERNEL_H
+#define KERNEL_H
+
+#include "PageManager.h"
+#include "ProcessManager.h"
+#include "KernelAllocator.h"
+#include "User.h"
+#include "BufferManager.h"
+#include "DeviceManager.h"
+#include "FileManager.h"
+#include "FileSystem.h"
+#include "SwapperManager.h"
+
+/*
+ * Kernel类用于封装操作内核相关的全局单实例，例如
+ * 像PageManager, ProcessManager等。
+ *
+ * Kernel类在内存中存在为单例模式，保证内核中封装的内核
+ * 模块的对象只有一个，且容易访问。
+ */
+class Kernel
+{
+public:
+	/*
+	 * ====================================================================
+	 * 新增：ESP定位User结构相关常量
+	 * ====================================================================
+	 */
+
+	// 每个进程的内核栈区域大小（8KB = 8192 = 0x2000字节）
+	// 包含：User结构(4KB) + 内核栈空间(4KB)
+	static const unsigned long KERNEL_STACK_SIZE = 0x2000;
+
+	// ESP定位掩码：用于清除ESP的低13位，得到8KB对齐地址
+	// 计算：0xFFFFFFFF & ~(KERNEL_STACK_SIZE - 1) = 0xFFFFE000
+	static const unsigned long KERNEL_STACK_MASK = 0xFFFFE000;
+
+	// User结构在内核栈区域中的偏移（0，位于起始位置）
+	static const unsigned long USER_OFFSET = 0x0;
+
+	// 内核栈起始偏移（4KB = 0x1000）
+	// User结构占用前4KB，内核栈使用后4KB
+	static const unsigned long STACK_OFFSET = 0x1000;
+
+	/*
+	 * ====================================================================
+	 * 旧常量：保留用于兼容性，可选择性使用
+	 * ====================================================================
+	 */
+	static const unsigned long USER_ADDRESS = 0x400000 - 0x1000 + 0xc0000000;	/* 0xC03FF000 */
+	static const unsigned long USER_PAGE_INDEX = 1023;		/* USER_ADDRESS对应页表项在PageTable中的索引 */
+
+public:
+	Kernel();
+	~Kernel();
+	static Kernel& Instance();
+	void Initialize();		/* 该函数完成初始化内核大部分数据结构的初始化 */
+
+	KernelPageManager& GetKernelPageManager();
+	UserPageManager& GetUserPageManager();
+	ProcessManager& GetProcessManager();
+	KernelAllocator& GetKernelAllocator();
+	SwapperManager& GetSwapperManager();
+	BufferManager& GetBufferManager();
+	DeviceManager& GetDeviceManager();
+	FileSystem& GetFileSystem();
+	FileManager& GetFileManager();
+
+	/*
+	 * 获取当前进程的User结构
+	 * 使用ESP寄存器定位（新实现）
+	 */
+	User& GetUser();
+
+	/*
+	 * 旧实现：通过固定虚拟地址获取User结构
+	 * 保留用于兼容性测试和验证
+	 */
+	User& GetUser_Legacy();
+
+private:
+	void InitMemory();
+	void InitProcess();
+	void InitBuffer();
+	void InitFileSystem();
+
+private:
+	static Kernel instance;		/* Kernel类的单实例 */
+
+	KernelPageManager* m_KernelPageManager;
+	UserPageManager* m_UserPageManager;
+	ProcessManager* m_ProcessManager;
+	KernelAllocator* m_KernelAllocator;
+	SwapperManager* m_SwapperManager;
+	BufferManager* m_BufferManager;
+	DeviceManager* m_DeviceManager;
+	FileSystem* m_FileSystem;
+	FileManager* m_FileManager;
+};
+
+/*
+ * ====================================================================
+ * 内联函数实现：GetUser() - ESP定位方式
+ * ====================================================================
+ *
+ * 原理：
+ * 1. 读取当前ESP寄存器的值
+ * 2. 通过位运算清除ESP的低13位，得到8KB对齐的边界地址
+ * 3. 该边界地址就是User结构的起始地址
+ *
+ * 性能优势：
+ * - 仅需2条指令（mov + and），无内存访问
+ * - 无需修改页表，无需刷新TLB
+ * - 完全原子操作，无需禁中断
+ */
+inline User& Kernel::GetUser()
+{
+	unsigned long esp;
+
+	// 读取ESP寄存器
+	__asm__ __volatile__("movl %%esp, %0" : "=r"(esp));
+
+	// 清除低13位，定位到8KB边界（User结构起始地址）
+	unsigned long user_base = esp & KERNEL_STACK_MASK;
+
+	return *(User*)user_base;
+}
+
+/*
+ * ====================================================================
+ * 旧实现：通过固定虚拟地址获取User结构
+ * ====================================================================
+ */
+inline User& Kernel::GetUser_Legacy()
+{
+	return *(User*)USER_ADDRESS;
+}
+
+#endif
