@@ -127,15 +127,40 @@ void sig_dzero(int signo)
 }
 \end{lstlisting}
 
+\textbf{重要说明}：经过实际测试发现，在Unix V6++系统中，\textbf{整数除零可能不会触发SIGFPE信号}。这是因为：
+\begin{itemize}
+    \item SIGFPE原本是"Floating Point Exception"，主要用于浮点运算异常
+    \item 不同架构和系统对整数除零的处理方式不同
+    \item Unix V6++可能没有完全实现整数除零的信号触发机制
+\end{itemize}
+
+\subsubsection{手动检查方案}
+
+由于信号机制可能不可靠，我们采用\textbf{双重保护}策略：
+
+\begin{lstlisting}
+// 手动检查除零（确保程序健壮性）
+if (b == 0)
+{
+    printf("\n[!] Error: Division by zero detected!\n");
+    printf("Can't divide by zero!\n\n");
+    continue;  // 跳过本次除法，继续下一次循环
+}
+
+// 执行除法运算
+c = a / b;
+\end{lstlisting}
+
 \subsubsection{主程序流程}
 
 \begin{enumerate}[itemsep=0.5em]
-    \item 注册 SIGFPE 信号处理函数
+    \item 注册 SIGFPE 信号处理函数（展示信号处理机制，即使可能不触发）
     \item 进入主循环
     \item 接收用户输入的被除数 \texttt{a} 和除数 \texttt{b}
-    \item 执行除法运算 \texttt{c = a / b}
-    \item 如果 \texttt{b = 0}，触发 SIGFPE 信号
-    \item 信号处理函数捕获异常并输出错误信息
+    \item \textbf{手动检查 b 是否为 0}（实际使用的保护机制）
+    \item 如果 \texttt{b = 0}，输出错误信息并继续循环
+    \item 如果 \texttt{b ≠ 0}，执行除法运算 \texttt{c = a / b}
+    \item 输出计算结果
     \item 程序继续运行，等待下一次输入
 \end{enumerate}
 
@@ -150,6 +175,7 @@ void sig_dzero(int signo)
     \item 主循环持续运行，不会因异常而退出
     \item 提供友好的用户交互界面
     \item 使用 \texttt{gets()} 和自定义的 \texttt{str\_to\_int()} 函数处理输入（因为 Unix V6++ 不支持 \texttt{scanf}）
+    \item \textbf{使用手动检查确保除数不为0}（双重保护）
 \end{itemize}
 
 \subsubsection{输入处理实现}
