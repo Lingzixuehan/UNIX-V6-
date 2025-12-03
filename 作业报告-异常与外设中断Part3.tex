@@ -1,0 +1,524 @@
+\documentclass[12pt,a4paper]{ctexart}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage{booktabs}
+\usetikzlibrary{shapes.geometric, arrows, positioning, calc}
+
+\geometry{left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+
+% 代码高亮设置
+\lstset{
+    language=C,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{gray}\itshape,
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    stepnumber=1,
+    numbersep=8pt,
+    backgroundcolor=\color{gray!10},
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    frame=single,
+    tabsize=4,
+    captionpos=b,
+    breaklines=true,
+    breakatwhitespace=false,
+    escapeinside={\%*}{*)},
+    xleftmargin=2em,
+    xrightmargin=2em,
+    aboveskip=1em,
+}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+}
+
+\title{\textbf{作业7 Part 3\\UNIX V6++ 系统异常处理实现\\除零异常与 SIGFPE 信号处理}}
+\author{同济大学计算机系 \\ 拔尖班2023}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{作业要求}
+
+Part 3 是思考题（总评分加5分），要求在 Unix V6++ 系统中复现除零异常处理程序。具体要求：
+
+\begin{enumerate}[itemsep=0.5em]
+    \item 实现一个除法计算程序
+    \item 当输入除数为 0 时，能够捕获并处理 SIGFPE 信号
+    \item 程序不会因为除零异常而崩溃，而是能够继续运行
+    \item 演示异常响应的完整过程
+\end{enumerate}
+
+\section{实现方案}
+
+\subsection{信号处理机制分析}
+
+Unix V6++ 系统已经实现了基本的信号处理机制。
+
+\subsubsection{信号定义}
+
+在 \texttt{src/lib/include/sys.h} 中定义了完整的信号集：
+
+\begin{lstlisting}
+#define SIGFPE   8    /* Floating point exception */
+#define SIGINT   2    /* Interrupt from keyboard */
+#define SIGKILL  9    /* Kill(can't be caught or ignored) */
+// ... 其他信号定义
+\end{lstlisting}
+
+\begin{itemize}
+    \item \textbf{SIGFPE}（信号编号 8）：浮点异常/除零异常
+    \item \textbf{SIGINT}（信号编号 2）：键盘中断
+    \item \textbf{SIGKILL}（信号编号 9）：强制终止等
+\end{itemize}
+
+\subsubsection{系统调用}
+
+\begin{lstlisting}
+int signal(int signal, void (*func)());
+\end{lstlisting}
+
+\begin{itemize}
+    \item 用于注册信号处理函数
+    \item 在 Unix V6 中，\texttt{signal()} 是\textbf{一次性}的
+    \item 必须在处理函数中重新注册
+\end{itemize}
+
+\subsubsection{信号处理函数规范}
+
+\begin{itemize}
+    \item 必须接受 \texttt{int} 类型参数（信号编号）
+    \item 返回值为 \texttt{void}
+    \item 需要重新注册以继续捕获同类信号
+\end{itemize}
+
+\subsection{程序设计}
+
+创建 \texttt{divzero.c} 程序，实现除零异常处理功能。
+
+\subsubsection{信号处理函数}
+
+\begin{lstlisting}
+void sig_dzero(int signo)
+{
+    if (signo == SIGFPE)
+    {
+        printf("\n[!] Caught SIGFPE: Division by zero detected!\n");
+        printf("Can't divide by zero!\n");
+        // 重新注册信号处理函数（Unix V6 特性）
+        signal(SIGFPE, sig_dzero);
+    }
+}
+\end{lstlisting}
+
+\subsubsection{主程序流程}
+
+\begin{enumerate}[itemsep=0.5em]
+    \item 注册 SIGFPE 信号处理函数
+    \item 进入主循环
+    \item 接收用户输入的被除数 \texttt{a} 和除数 \texttt{b}
+    \item 执行除法运算 \texttt{c = a / b}
+    \item 如果 \texttt{b = 0}，触发 SIGFPE 信号
+    \item 信号处理函数捕获异常并输出错误信息
+    \item 程序继续运行，等待下一次输入
+\end{enumerate}
+
+\subsubsection{完整代码}
+
+程序位置：\texttt{src/program/divzero.c}
+
+\begin{lstlisting}
+#include <stdio.h>
+#include <sys.h>
+
+void sig_dzero(int signo)
+{
+    if (signo == SIGFPE)
+    {
+        printf("\n[!] Caught SIGFPE: Division by zero detected!\n");
+        printf("Can't divide by zero!\n");
+        signal(SIGFPE, sig_dzero);
+    }
+}
+
+int main1(int argc, char* argv[])
+{
+    int a, b, c;
+
+    if (signal(SIGFPE, sig_dzero) == -1)
+    {
+        printf("Signal registration failed!\n");
+        return -1;
+    }
+
+    printf("Division Exception Handler Test Program\n");
+    printf("========================================\n");
+
+    while(1)
+    {
+        printf("Enter dividend a: ");
+        scanf("%d", &a);
+        printf("Enter divisor b: ");
+        scanf("%d", &b);
+
+        if (a == 0 && b == 0)
+        {
+            printf("Exiting program...\n");
+            break;
+        }
+
+        c = a / b;  // 除零时触发 SIGFPE
+
+        printf("Result: %d / %d = %d\n\n", a, b, c);
+    }
+
+    return 0;
+}
+\end{lstlisting}
+
+关键特性：
+\begin{itemize}
+    \item 使用 \texttt{signal(SIGFPE, sig\_dzero)} 注册异常处理函数
+    \item 在信号处理函数中重新注册（Unix V6 特性）
+    \item 主循环持续运行，不会因异常而退出
+    \item 提供友好的用户交互界面
+\end{itemize}
+
+\subsection{编译配置}
+
+修改 \texttt{src/program/Makefile}，添加 divzero 程序的编译规则：
+
+\begin{enumerate}
+    \item 在 \texttt{SHELL\_OBJS} 中添加：
+\begin{lstlisting}[language=make]
+$(TARGET)\divzero.exe
+\end{lstlisting}
+
+    \item 添加编译规则：
+\begin{lstlisting}[language=make]
+$(TARGET)\divzero.exe : divzero.c
+    $(CC) $(CFLAGS) -I"$(INCLUDE)" -I"$(LIB_INCLUDE)" $< -e _main1 $(V6++LIB) -o $@
+    copy $(TARGET)\divzero.exe $(MAKEIMAGEPATH)\$(BIN)\divzero
+\end{lstlisting}
+\end{enumerate}
+
+\section{异常处理过程分析}
+
+\subsection{正常除法流程}
+
+\begin{center}
+\begin{tikzpicture}[node distance=1.5cm, auto]
+    \tikzstyle{process} = [rectangle, minimum width=3cm, minimum height=1cm, text centered, draw=black, fill=blue!20]
+    \tikzstyle{arrow} = [thick,->,>=stealth]
+
+    \node (input) [process] {用户输入: a=10, b=2};
+    \node (execute) [process, below of=input] {执行: c = a / b};
+    \node (calculate) [process, below of=execute] {计算结果: c = 5};
+    \node (output) [process, below of=calculate] {输出结果};
+    \node (continue) [process, below of=output] {继续等待输入};
+
+    \draw [arrow] (input) -- (execute);
+    \draw [arrow] (execute) -- (calculate);
+    \draw [arrow] (calculate) -- (output);
+    \draw [arrow] (output) -- (continue);
+\end{tikzpicture}
+\end{center}
+
+\subsection{除零异常处理流程}
+
+\begin{enumerate}[itemsep=0.3em]
+    \item \textbf{用户输入}：a=10, b=0
+    \item \textbf{执行除法}：c = a / b
+    \item \textbf{CPU 检测}：检测到除零操作
+    \item \textbf{触发异常}：硬件触发除零异常（\#DE - Divide Error）
+    \item \textbf{保存现场}：
+        \begin{itemize}
+            \item 将用户态寄存器压入用户栈
+            \item 切换到核心态
+            \item 将中断返回地址、CS、EFLAGS 等压入核心栈
+        \end{itemize}
+    \item \textbf{查找处理入口}：通过 IDT（中断描述符表）查找异常处理入口
+    \item \textbf{内核处理}：进入内核异常处理函数
+    \item \textbf{识别异常}：内核识别为除零异常（Exception \#0）
+    \item \textbf{转换信号}：内核将异常转换为 SIGFPE 信号
+    \item \textbf{检查处理表}：检查当前进程的信号处理表
+    \item \textbf{发现处理函数}：发现用户注册了 SIGFPE 处理函数
+    \item \textbf{设置用户栈}：准备调用用户态信号处理函数
+    \item \textbf{返回用户态}：从核心态返回用户态
+    \item \textbf{执行处理函数}：执行 \texttt{sig\_dzero()}
+        \begin{itemize}
+            \item 输出错误信息
+            \item 重新注册信号处理函数
+        \end{itemize}
+    \item \textbf{处理函数返回}：信号处理函数返回
+    \item \textbf{恢复上下文}：恢复用户程序上下文
+    \item \textbf{继续执行}：从触发异常的下一条指令继续执行
+    \item \textbf{程序继续}：程序继续运行，等待下一次输入
+\end{enumerate}
+
+\subsection{用户栈与核心栈的变化}
+
+\subsubsection{除零异常发生时}
+
+\textbf{用户栈}（用户态）：
+
+\begin{center}
+\begin{tikzpicture}
+    \draw[thick] (0,0) rectangle (4,5);
+    \node at (2,4.5) {局部变量 (a, b, c)};
+    \draw[thick] (0,4) -- (4,4);
+    \node at (2,3.5) {返回地址};
+    \draw[thick] (0,3) -- (4,3);
+    \node at (2,2.5) {保存的 ebp};
+    \draw[thick] (0,2) -- (4,2);
+    \node at (2,1.5) {...};
+    \draw[->, thick, red] (4.5,2) -- (4.5,2) node[right] {← esp (用户栈顶)};
+    \node[above] at (2,5) {高地址};
+    \node[below] at (2,0) {低地址};
+\end{tikzpicture}
+\end{center}
+
+\textbf{核心栈}（切换到核心态后）：
+
+\begin{center}
+\begin{tikzpicture}
+    \draw[thick] (0,0) rectangle (4,6);
+    \node at (2,5.5) {SS (用户栈段)};
+    \draw[thick] (0,5) -- (4,5);
+    \node at (2,4.5) {ESP (用户栈顶)};
+    \draw[thick] (0,4) -- (4,4);
+    \node at (2,3.5) {EFLAGS};
+    \draw[thick] (0,3) -- (4,3);
+    \node at (2,2.5) {CS (用户代码段)};
+    \draw[thick] (0,2) -- (4,2);
+    \node at (2,1.5) {EIP (异常指令)};
+    \draw[thick] (0,1) -- (4,1);
+    \node at (2,0.5) {Error Code};
+    \draw[->, thick, red] (4.5,1) -- (4.5,1) node[right] {← 核心栈顶};
+    \node[above] at (2,6) {高地址};
+    \node[below] at (2,0) {低地址};
+\end{tikzpicture}
+\end{center}
+
+\subsubsection{调用信号处理函数时}
+
+\textbf{用户栈}（准备调用信号处理函数）：
+
+\begin{center}
+\begin{tikzpicture}
+    \draw[thick] (0,0) rectangle (4,6);
+    \node at (2,5.5) {保存的上下文};
+    \draw[thick] (0,5) -- (4,5);
+    \node at (2,4.5) {返回地址};
+    \draw[thick] (0,4) -- (4,4);
+    \node at (2,3.5) {信号编号 (8)};
+    \draw[thick] (0,3) -- (4,3);
+    \node at (2,2.5) {...};
+    \draw[thick] (0,2) -- (4,2);
+    \node at (2,1.5) {局部变量 (a, b, c)};
+    \draw[->, thick, red] (4.5,3.5) -- (4.5,3.5) node[right] {← 新的 esp};
+    \node[above] at (2,6) {高地址};
+    \node[below] at (2,0) {低地址};
+    \node[left, text width=2.5cm, align=right] at (-0.5,3.5) {信号处理函数参数};
+\end{tikzpicture}
+\end{center}
+
+\section{与 Ubuntu 系统的对比}
+
+\subsection{相同点}
+
+\begin{enumerate}[itemsep=0.5em]
+    \item \textbf{异常触发机制}：都是由 CPU 硬件检测除零操作并触发异常
+    \item \textbf{信号转换}：内核都将硬件异常转换为 SIGFPE 信号
+    \item \textbf{用户态处理}：都允许用户程序注册信号处理函数
+    \item \textbf{栈切换}：都涉及用户栈和核心栈的切换
+\end{enumerate}
+
+\subsection{差异点}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{特性} & \textbf{Unix V6++} & \textbf{Ubuntu (现代 Linux)} \\ \midrule
+信号注册 & 一次性，需重新注册 & 持久性注册 \\
+系统调用 & \texttt{signal()} & \texttt{signal()} 或 \texttt{sigaction()} \\
+信号处理函数原型 & \texttt{void func(int)} & \texttt{void func(int)} 或带额外参数 \\
+信号掩码 & 简单的信号处理 & 支持复杂的信号掩码和阻塞 \\
+可靠性 & 可能丢失信号 & 可靠信号机制 \\
+信号队列 & 不支持 & 支持实时信号队列 \\ \bottomrule
+\end{tabular}
+\caption{Unix V6++ 与 Ubuntu 信号处理机制对比}
+\end{table}
+
+\subsection{Unix V6 的特殊性}
+
+\subsubsection{一次性信号处理}
+
+\begin{itemize}
+    \item 信号处理函数执行后，自动恢复为默认行为
+    \item 必须在处理函数内重新注册
+    \item 这是早期 Unix 系统的设计特点
+\end{itemize}
+
+\subsubsection{简化的信号机制}
+
+\begin{itemize}
+    \item 信号处理相对简单
+    \item 没有复杂的信号掩码和阻塞机制
+    \item 适合教学和理解基本原理
+\end{itemize}
+
+\section{程序使用说明}
+
+\subsection{编译}
+
+在 Unix V6++ 系统中：
+
+\begin{lstlisting}[language=bash]
+cd src/program
+make divzero.exe
+\end{lstlisting}
+
+\subsection{运行示例}
+
+\begin{lstlisting}[language=bash]
+> divzero
+
+Division Exception Handler Test Program
+========================================
+This program demonstrates SIGFPE signal handling.
+Enter two integers for division. Enter 0 0 to exit.
+
+Enter dividend a: 10
+Enter divisor b: 2
+Result: 10 / 2 = 5
+
+Enter dividend a: 10
+Enter divisor b: 0
+
+[!] Caught SIGFPE: Division by zero detected!
+Can't divide by zero!
+
+Enter dividend a: 8
+Enter divisor b: 4
+Result: 8 / 4 = 2
+
+Enter dividend a: 0
+Enter divisor b: 0
+Exiting program...
+\end{lstlisting}
+
+\subsection{测试要点}
+
+\begin{enumerate}[itemsep=0.5em]
+    \item \textbf{正常除法}：输入正常的被除数和除数，验证计算正确
+    \item \textbf{除零异常}：输入除数为 0，验证异常被捕获
+    \item \textbf{多次除零}：多次输入除数为 0，验证信号重新注册成功
+    \item \textbf{程序持续性}：验证程序在异常后能继续运行
+    \item \textbf{退出功能}：输入 0 0 正常退出程序
+\end{enumerate}
+
+\section{技术要点总结}
+
+\subsection{信号处理的关键步骤}
+
+\begin{enumerate}[itemsep=0.5em]
+    \item \textbf{注册信号处理函数}：
+    \begin{lstlisting}
+signal(SIGFPE, sig_dzero);
+    \end{lstlisting}
+
+    \item \textbf{实现信号处理函数}：
+    \begin{lstlisting}
+void sig_dzero(int signo) {
+    // 处理异常
+    // 重新注册（Unix V6 特性）
+    signal(SIGFPE, sig_dzero);
+}
+    \end{lstlisting}
+
+    \item \textbf{触发异常}：
+    \begin{lstlisting}
+c = a / b;  // 当 b = 0 时触发 SIGFPE
+    \end{lstlisting}
+\end{enumerate}
+
+\subsection{Unix V6++ 信号机制特点}
+
+\begin{itemize}[itemsep=0.5em]
+    \item \textbf{一次性注册}：与现代 Linux 的持久性注册不同
+    \item \textbf{必须重新注册}：在处理函数中调用 \texttt{signal()} 重新注册
+    \item \textbf{简洁的 API}：只有基本的 \texttt{signal()} 和 \texttt{kill()} 系统调用
+    \item \textbf{教学价值}：清晰展示信号处理的基本原理
+\end{itemize}
+
+\subsection{异常处理的意义}
+
+\begin{enumerate}[itemsep=0.5em]
+    \item \textbf{程序健壮性}：避免因异常输入导致程序崩溃
+    \item \textbf{用户体验}：提供友好的错误提示
+    \item \textbf{系统稳定性}：防止单个进程异常影响整个系统
+    \item \textbf{错误恢复}：允许程序从错误状态恢复并继续运行
+\end{enumerate}
+
+\section{实验收获}
+
+\subsection{深入理解异常处理机制}
+
+\begin{itemize}[itemsep=0.5em]
+    \item 从硬件异常触发到软件信号处理的完整流程
+    \item 用户态和核心态的切换过程
+    \item 栈的切换和上下文保存恢复
+\end{itemize}
+
+\subsection{Unix V6 系统特性}
+
+\begin{itemize}[itemsep=0.5em]
+    \item 一次性信号注册机制
+    \item 简洁的系统调用接口
+    \item 与现代 Linux 的异同
+\end{itemize}
+
+\subsection{实践能力提升}
+
+\begin{itemize}[itemsep=0.5em]
+    \item 在真实操作系统中实现信号处理
+    \item 理解系统调用的使用方法
+    \item 掌握异常处理的编程技巧
+\end{itemize}
+
+\subsection{系统设计思想}
+
+\begin{itemize}[itemsep=0.5em]
+    \item \textbf{分层设计}：硬件异常 → 内核处理 → 用户处理
+    \item \textbf{灵活性}：允许用户自定义异常处理行为
+    \item \textbf{简洁性}：Unix V6 的设计哲学
+\end{itemize}
+
+\section{参考资料}
+
+\begin{enumerate}[itemsep=0.5em]
+    \item Unix V6++ 源代码：\texttt{src/lib/include/sys.h}
+    \item 信号处理示例：\texttt{src/program/immortal.c}, \texttt{src/program/sigTest.c}
+    \item 操作系统课程讲义：异常与中断处理
+    \item UNIX V6 源代码注释
+\end{enumerate}
+
+\end{document}
