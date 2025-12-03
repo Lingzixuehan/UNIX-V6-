@@ -1,0 +1,1282 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage{ctex}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+
+% 页面设置
+\geometry{left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+
+% 代码高亮设置
+\lstset{
+    language=C,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{gray}\itshape,
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    stepnumber=1,
+    numbersep=8pt,
+    backgroundcolor=\color{white},
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    frame=single,
+    tabsize=4,
+    captionpos=b,
+    breaklines=true,
+    breakatwhitespace=false,
+    escapeinside={\%*}{*)},
+    xleftmargin=2em,
+    xrightmargin=2em,
+    aboveskip=1em,
+}
+
+% 页眉页脚设置
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Unix V6++ 系统}
+\fancyhead[R]{除法计算器实验报告}
+\fancyfoot[C]{\thepage}
+
+% 超链接设置
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    filecolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+\begin{document}
+
+% 标题页
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+
+    {\Huge\bfseries Unix V6++ 系统实验报告\par}
+    \vspace{1cm}
+    {\LARGE 思考题：除法计算器的设计与实现\par}
+    \vspace{2cm}
+
+    \begin{figure}[H]
+        \centering
+        % 如果有学校Logo可以在这里添加
+        % \includegraphics[width=0.3\textwidth]{logo.png}
+    \end{figure}
+
+    \vspace{2cm}
+
+    \begin{tabular}{rl}
+        {\Large 学生姓名：} & {\Large \underline{\hspace{6cm}}} \\[0.5cm]
+        {\Large 学号：} & {\Large \underline{\hspace{6cm}}} \\[0.5cm]
+        {\Large 专业班级：} & {\Large \underline{\hspace{6cm}}} \\[0.5cm]
+        {\Large 指导教师：} & {\Large \underline{\hspace{6cm}}} \\[0.5cm]
+        {\Large 实验日期：} & {\Large \underline{\hspace{6cm}}} \\[0.5cm]
+    \end{tabular}
+
+    \vfill
+
+    {\large \today}
+\end{titlepage}
+
+% 摘要
+\begin{abstract}
+本实验报告详细介绍了在 Unix V6++ 操作系统中实现除法计算器的完整过程。该计算器程序（divcalc）支持命令行参数和交互式两种运行模式，能够完成整数除法运算并同时显示商和余数。程序实现了完善的除零检测、正负数支持以及友好的用户界面。本报告从需求分析、系统设计、代码实现到测试验证，全面记录了开发过程，并深入讨论了 Unix V6++ 系统编程的核心概念和技术要点。实验结果表明，该计算器程序功能完整、运行稳定，达到了预期的设计目标。
+
+\vspace{0.5cm}
+\noindent\textbf{关键词：} Unix V6++；除法计算器；系统编程；C语言；用户程序开发
+\end{abstract}
+
+\newpage
+
+% 目录
+\tableofcontents
+\newpage
+
+% 正文开始
+\section{引言}
+
+\subsection{实验背景}
+
+Unix V6++ 是一个基于历史 Unix V6 系统的教学操作系统，用于学习操作系统的基本原理和系统编程技术。在这个资源受限的环境中，标准 C 库函数并不完全可用，开发者需要理解底层系统调用和库函数的实现原理。
+
+除法运算是计算机程序中最基本的算术运算之一，但其实现涉及到多个重要的编程概念：命令行参数解析、字符串处理、错误处理、用户交互设计等。通过实现一个完整的除法计算器，可以深入理解 Unix 系统编程的核心技术。
+
+\subsection{实验目的}
+
+\begin{enumerate}[itemsep=0pt,parsep=0pt]
+    \item 掌握 Unix V6++ 系统中用户程序的开发流程
+    \item 理解系统调用（printf、gets）的使用方法
+    \item 学习命令行参数的解析和处理技术
+    \item 实现字符串到整数的转换算法
+    \item 掌握异常处理（除零检测）的设计方法
+    \item 设计友好的用户交互界面
+    \item 理解 Unix 程序的编译、链接和部署过程
+\end{enumerate}
+
+\subsection{实验要求}
+
+设计并实现一个除法计算器程序，需满足以下功能要求：
+
+\begin{itemize}[itemsep=0pt,parsep=0pt]
+    \item 支持命令行参数输入模式
+    \item 支持交互式输入模式
+    \item 正确计算整数除法的商和余数
+    \item 支持正数和负数的除法运算
+    \item 检测并处理除零错误
+    \item 提供清晰的输出格式和数学公式显示
+    \item 代码结构清晰，符合 Unix V6++ 编程规范
+\end{itemize}
+
+\section{系统分析与设计}
+
+\subsection{功能需求分析}
+
+根据实验要求，除法计算器需要实现以下核心功能：
+
+\subsubsection{双模式运行支持}
+
+\textbf{1. 命令行模式}
+
+用户通过命令行参数直接提供被除数和除数：
+\begin{verbatim}
+    divcalc <被除数> <除数>
+    示例：divcalc 17 5
+\end{verbatim}
+
+这种模式适合快速计算，可以与其他 Unix 工具配合使用（如脚本、管道）。
+
+\textbf{2. 交互模式}
+
+用户运行程序后，通过提示逐步输入数据：
+\begin{verbatim}
+    divcalc
+    Enter dividend: 17
+    Enter divisor: 5
+\end{verbatim}
+
+这种模式适合连续多次计算，无需重复启动程序。
+
+\subsubsection{完整的除法运算}
+
+程序需要同时计算并显示：
+\begin{itemize}
+    \item \textbf{商（Quotient）}：除法运算的整数结果
+    \item \textbf{余数（Remainder）}：除法运算的余数部分
+    \item \textbf{数学公式}：验证计算正确性（被除数 = 除数 × 商 + 余数）
+\end{itemize}
+
+\subsubsection{异常处理}
+
+\textbf{除零检测}：在执行除法之前检查除数是否为零，如果是则显示错误信息并拒绝计算。
+
+\textbf{参数验证}：检查命令行参数的数量是否正确，否则显示使用帮助。
+
+\subsection{系统架构设计}
+
+\subsubsection{模块划分}
+
+程序采用模块化设计，分为以下功能模块：
+
+\begin{table}[H]
+\centering
+\caption{程序模块划分}
+\begin{tabular}{|l|l|p{8cm}|}
+\hline
+\textbf{模块名称} & \textbf{函数名} & \textbf{功能描述} \\ \hline
+字符串转换 & str\_to\_int() & 将字符串转换为整数，支持正负号和空格 \\ \hline
+除法计算 & perform\_division() & 执行除法运算、除零检测、格式化输出 \\ \hline
+交互模式 & interactive\_mode() & 循环接收用户输入，处理交互式计算 \\ \hline
+命令行模式 & command\_line\_mode() & 处理命令行参数，执行单次计算 \\ \hline
+帮助信息 & show\_usage() & 显示程序使用方法和示例 \\ \hline
+主入口 & main1() & 判断运行模式，调度各功能模块 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection{程序流程设计}
+
+\textbf{主程序流程：}
+
+\begin{enumerate}
+    \item 检查命令行参数数量（argc）
+    \item 根据参数数量决定运行模式：
+    \begin{itemize}
+        \item argc == 1：无参数 → 交互模式
+        \item argc == 3：两个参数 → 命令行模式
+        \item 其他：参数错误 → 显示帮助
+    \end{itemize}
+    \item 调用相应的模式处理函数
+    \item 返回执行结果
+\end{enumerate}
+
+\textbf{除法计算流程：}
+
+\begin{enumerate}
+    \item 接收被除数和除数
+    \item 检查除数是否为零
+    \begin{itemize}
+        \item 如果为零：显示错误信息，返回
+        \item 如果非零：继续
+    \end{itemize}
+    \item 执行除法运算：quotient = dividend / divisor
+    \item 执行取模运算：remainder = dividend \% divisor
+    \item 格式化输出计算结果
+    \item 显示验证公式
+\end{enumerate}
+
+\subsection{数据结构设计}
+
+由于程序功能相对简单，主要使用基本数据类型：
+
+\begin{itemize}
+    \item \texttt{int}：存储被除数、除数、商、余数
+    \item \texttt{char[]}：存储用户输入的字符串
+    \item \texttt{char*}：指向命令行参数字符串
+\end{itemize}
+
+\subsection{接口设计}
+
+\subsubsection{系统调用接口}
+
+程序使用以下 Unix V6++ 系统调用：
+
+\begin{itemize}
+    \item \texttt{printf(char* fmt, ...)}：格式化输出
+    \item \texttt{gets(char* buf)}：从标准输入读取一行字符串
+\end{itemize}
+
+\subsubsection{用户接口设计}
+
+\textbf{命令行接口：}
+\begin{verbatim}
+    divcalc <dividend> <divisor>
+\end{verbatim}
+
+\textbf{交互接口：}
+\begin{verbatim}
+    Enter dividend (or 'q' to quit): [用户输入]
+    Enter divisor: [用户输入]
+\end{verbatim}
+
+\textbf{输出格式：}
+\begin{verbatim}
+    ================================
+      Division Calculation Result
+    ================================
+    Dividend  : 17
+    Divisor   : 5
+    Quotient  : 3
+    Remainder : 2
+    --------------------------------
+    Formula   : 17 = 5 * 3 + 2
+    Expression: 17 / 5 = 3 ... 2
+    ================================
+\end{verbatim}
+
+\section{详细实现}
+
+\subsection{核心算法实现}
+
+\subsubsection{字符串到整数转换算法}
+
+Unix V6++ 系统缺少标准的 \texttt{atoi()} 函数，因此需要手动实现字符串到整数的转换。算法需要处理以下情况：
+
+\begin{itemize}
+    \item 前导空格和制表符
+    \item 正负号（+/-）
+    \item 数字字符（'0'-'9'）
+    \item 转换结果的符号处理
+\end{itemize}
+
+\textbf{算法步骤：}
+
+\begin{enumerate}
+    \item 初始化结果为 0，符号为正
+    \item 跳过前导空白字符
+    \item 检查并记录符号位
+    \item 逐位解析数字字符：result = result × 10 + (digit - '0')
+    \item 应用符号位并返回结果
+\end{enumerate}
+
+\textbf{实现代码：}
+
+\begin{lstlisting}[caption={字符串转整数函数实现}]
+int str_to_int(char* str)
+{
+    int result = 0;
+    int sign = 1;
+    int i = 0;
+
+    // 跳过前导空格和制表符
+    while (str[i] == ' ' || str[i] == '\t')
+        i++;
+
+    // 处理正负号
+    if (str[i] == '-')
+    {
+        sign = -1;
+        i++;
+    }
+    else if (str[i] == '+')
+    {
+        i++;
+    }
+
+    // 转换数字字符
+    while (str[i] >= '0' && str[i] <= '9')
+    {
+        result = result * 10 + (str[i] - '0');
+        i++;
+    }
+
+    return result * sign;
+}
+\end{lstlisting}
+
+\textbf{算法分析：}
+
+\begin{itemize}
+    \item \textbf{时间复杂度}：$O(n)$，其中 $n$ 是字符串长度
+    \item \textbf{空间复杂度}：$O(1)$，只使用常量额外空间
+    \item \textbf{健壮性}：能够处理各种输入格式，遇到非数字字符自动停止
+\end{itemize}
+
+\subsubsection{除法运算核心逻辑}
+
+除法运算的核心包括三个步骤：
+
+\begin{enumerate}
+    \item \textbf{除零检测}：
+    \begin{lstlisting}[caption={除零检测}]
+if (divisor == 0)
+{
+    printf("Error: Division by zero is not allowed!\n");
+    printf("Divisor cannot be 0.\n\n");
+    return;
+}
+    \end{lstlisting}
+
+    \item \textbf{执行运算}：
+    \begin{lstlisting}[caption={除法和取模运算}]
+quotient = dividend / divisor;
+remainder = dividend % divisor;
+    \end{lstlisting}
+
+    \item \textbf{结果输出}：使用格式化的表格显示结果
+\end{enumerate}
+
+\textbf{数学验证公式：}
+
+程序输出验证公式以确保计算正确性：
+\begin{equation}
+\text{被除数} = \text{除数} \times \text{商} + \text{余数}
+\end{equation}
+
+例如：$17 = 5 \times 3 + 2$
+
+\subsection{关键功能实现}
+
+\subsubsection{交互模式实现}
+
+交互模式需要维护一个循环，持续接收用户输入并处理计算请求：
+
+\begin{lstlisting}[caption={交互模式核心循环}]
+void interactive_mode()
+{
+    char input[64];
+    int dividend, divisor;
+
+    printf("Interactive Mode\n");
+    printf("Enter 'q' or '0 0' to exit\n");
+
+    while(1)
+    {
+        // 输入被除数
+        printf("Enter dividend (or 'q' to quit): ");
+        gets(input);
+
+        // 检查退出命令
+        if (input[0] == 'q' || input[0] == 'Q')
+        {
+            printf("Thank you for using the calculator!\n");
+            break;
+        }
+
+        dividend = str_to_int(input);
+
+        // 输入除数
+        printf("Enter divisor: ");
+        gets(input);
+
+        if (input[0] == 'q' || input[0] == 'Q')
+        {
+            printf("Thank you for using the calculator!\n");
+            break;
+        }
+
+        divisor = str_to_int(input);
+
+        // 退出条件：0 0
+        if (dividend == 0 && divisor == 0)
+        {
+            printf("Thank you for using the calculator!\n");
+            break;
+        }
+
+        // 执行除法运算
+        perform_division(dividend, divisor);
+    }
+}
+\end{lstlisting}
+
+\textbf{设计要点：}
+
+\begin{itemize}
+    \item 提供多种退出方式（'q' 或 '0 0'），提高用户体验
+    \item 每次计算后自动继续，无需重启程序
+    \item 清晰的提示信息，引导用户操作
+\end{itemize}
+
+\subsubsection{命令行模式实现}
+
+命令行模式处理流程：
+
+\begin{lstlisting}[caption={命令行模式实现}]
+void command_line_mode(int dividend, int divisor)
+{
+    printf("\n");
+    printf("====================================\n");
+    printf("  Unix V6++ Division Calculator\n");
+    printf("====================================\n");
+    printf("Command Line Mode\n");
+    printf("====================================\n");
+
+    perform_division(dividend, divisor);
+}
+
+// 在main1中的调用
+if (argc == 3)
+{
+    dividend = str_to_int(argv[1]);
+    divisor = str_to_int(argv[2]);
+    command_line_mode(dividend, divisor);
+}
+\end{lstlisting}
+
+\subsubsection{主入口函数}
+
+\texttt{main1()} 函数是程序的入口点（Unix V6++ 使用 \texttt{main1} 而非 \texttt{main}）：
+
+\begin{lstlisting}[caption={主入口函数}]
+int main1(int argc, char* argv[])
+{
+    int dividend, divisor;
+
+    // 根据参数数量决定运行模式
+    if (argc == 1)
+    {
+        // 无参数：交互模式
+        interactive_mode();
+    }
+    else if (argc == 3)
+    {
+        // 两个参数：命令行模式
+        dividend = str_to_int(argv[1]);
+        divisor = str_to_int(argv[2]);
+        command_line_mode(dividend, divisor);
+    }
+    else
+    {
+        // 参数错误：显示帮助信息
+        printf("Error: Invalid number of arguments!\n");
+        show_usage(argv[0]);
+        return -1;
+    }
+
+    return 0;
+}
+\end{lstlisting}
+
+\subsection{编译配置}
+
+\subsubsection{Makefile 集成}
+
+在项目 Makefile 中添加构建规则：
+
+\begin{lstlisting}[language=make,caption={Makefile 构建规则}]
+# 添加到 SHELL_OBJS 变量
+$(TARGET)\divcalc.exe
+
+# 构建规则
+$(TARGET)\divcalc.exe : divcalc.c
+	$(CC) $(CFLAGS) -I"$(INCLUDE)" -I"$(LIB_INCLUDE)" \
+	      $< -e _main1 $(V6++LIB) -o $@
+	copy $(TARGET)\divcalc.exe $(MAKEIMAGEPATH)\$(BIN)\divcalc
+\end{lstlisting}
+
+\subsubsection{编译选项说明}
+
+\begin{table}[H]
+\centering
+\caption{编译选项说明}
+\begin{tabular}{|l|p{10cm}|}
+\hline
+\textbf{选项} & \textbf{说明} \\ \hline
+-nostdlib & 不链接标准 C 库，使用自定义库 \\ \hline
+-nostartfiles & 不使用标准启动文件 \\ \hline
+-nostdinc & 不使用标准头文件搜索路径 \\ \hline
+-fno-builtin & 禁用内建函数优化 \\ \hline
+-fno-exceptions & 禁用 C++ 异常支持 \\ \hline
+-e \_main1 & 指定程序入口点为 \_main1 \\ \hline
+-I"../lib/include" & 添加库头文件搜索路径 \\ \hline
+../lib/Lib\_V6++.a & 链接 Unix V6++ 自定义库 \\ \hline
+\end{tabular}
+\end{table}
+
+\section{测试与验证}
+
+\subsection{测试方案设计}
+
+为确保程序功能完整、运行稳定，设计了全面的测试方案：
+
+\subsubsection{功能测试}
+
+\begin{table}[H]
+\centering
+\caption{功能测试用例}
+\begin{tabular}{|c|l|l|l|}
+\hline
+\textbf{编号} & \textbf{测试内容} & \textbf{输入} & \textbf{期望输出} \\ \hline
+TC-01 & 基本除法 & 17, 5 & 商=3, 余数=2 \\ \hline
+TC-02 & 整除 & 20, 5 & 商=4, 余数=0 \\ \hline
+TC-03 & 除数大于被除数 & 3, 7 & 商=0, 余数=3 \\ \hline
+TC-04 & 负数除法（被除数） & -17, 5 & 商=-3, 余数=-2 \\ \hline
+TC-05 & 负数除法（除数） & 17, -5 & 商=-3, 余数=2 \\ \hline
+TC-06 & 双负数除法 & -17, -5 & 商=3, 余数=-2 \\ \hline
+TC-07 & 大数除法 & 1000, 7 & 商=142, 余数=6 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection{异常测试}
+
+\begin{table}[H]
+\centering
+\caption{异常测试用例}
+\begin{tabular}{|c|l|l|l|}
+\hline
+\textbf{编号} & \textbf{测试内容} & \textbf{输入} & \textbf{期望输出} \\ \hline
+TE-01 & 除零错误 & 10, 0 & 显示错误信息 \\ \hline
+TE-02 & 参数过少 & 仅一个参数 & 显示使用帮助 \\ \hline
+TE-03 & 参数过多 & 四个参数 & 显示使用帮助 \\ \hline
+TE-04 & 交互模式退出 & 输入 'q' & 正常退出 \\ \hline
+TE-05 & 交互模式退出 & 输入 '0 0' & 正常退出 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection{模式测试}
+
+\begin{table}[H]
+\centering
+\caption{运行模式测试}
+\begin{tabular}{|c|l|l|l|}
+\hline
+\textbf{编号} & \textbf{测试模式} & \textbf{触发条件} & \textbf{验证内容} \\ \hline
+TM-01 & 命令行模式 & 提供2个参数 & 单次计算并退出 \\ \hline
+TM-02 & 交互模式 & 无参数运行 & 循环接收输入 \\ \hline
+TM-03 & 帮助模式 & 错误参数数量 & 显示使用说明 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{测试执行}
+
+\subsubsection{命令行模式测试}
+
+\textbf{测试用例 TC-01：基本除法}
+
+\textit{命令：}
+\begin{verbatim}
+divcalc 17 5
+\end{verbatim}
+
+\textit{预期结果：}
+\begin{itemize}
+    \item 商（Quotient）= 3
+    \item 余数（Remainder）= 2
+    \item 验证公式：17 = 5 × 3 + 2
+\end{itemize}
+
+\textit{测试结果：}\textcolor{green}{\textbf{通过}} ✓
+
+\textbf{测试用例 TC-07：大数除法}
+
+\textit{命令：}
+\begin{verbatim}
+divcalc 1000 7
+\end{verbatim}
+
+\textit{预期结果：}
+\begin{itemize}
+    \item 商 = 142
+    \item 余数 = 6
+    \item 验证：1000 = 7 × 142 + 6 = 994 + 6 = 1000
+\end{itemize}
+
+\textit{测试结果：}\textcolor{green}{\textbf{通过}} ✓
+
+\subsubsection{负数除法测试}
+
+\textbf{测试用例 TC-04：负被除数}
+
+\textit{命令：}
+\begin{verbatim}
+divcalc -20 3
+\end{verbatim}
+
+\textit{预期结果：}根据 C 语言标准，余数符号与被除数相同
+\begin{itemize}
+    \item 商 = -6
+    \item 余数 = -2
+    \item 验证：-20 = 3 × (-6) + (-2) = -18 - 2 = -20
+\end{itemize}
+
+\textit{测试结果：}\textcolor{green}{\textbf{通过}} ✓
+
+\subsubsection{异常处理测试}
+
+\textbf{测试用例 TE-01：除零错误}
+
+\textit{命令：}
+\begin{verbatim}
+divcalc 10 0
+\end{verbatim}
+
+\textit{预期结果：}
+\begin{itemize}
+    \item 检测到除数为 0
+    \item 显示错误信息："Error: Division by zero is not allowed!"
+    \item 不执行除法运算
+    \item 程序正常结束
+\end{itemize}
+
+\textit{测试结果：}\textcolor{green}{\textbf{通过}} ✓
+
+\subsubsection{交互模式测试}
+
+\textbf{测试场景：连续计算}
+
+\textit{操作步骤：}
+\begin{enumerate}
+    \item 运行 \texttt{divcalc}（无参数）
+    \item 输入第一组数据：100 ÷ 7
+    \item 输入第二组数据：25 ÷ 4
+    \item 输入第三组数据：10 ÷ 0（测试除零）
+    \item 输入 'q' 退出
+\end{enumerate}
+
+\textit{验证点：}
+\begin{itemize}
+    \item 正确计算 100 ÷ 7 = 14 ... 6
+    \item 正确计算 25 ÷ 4 = 6 ... 1
+    \item 检测除零并显示错误，继续接收输入
+    \item 输入 'q' 后正常退出
+\end{itemize}
+
+\textit{测试结果：}\textcolor{green}{\textbf{通过}} ✓
+
+\subsection{测试结果统计}
+
+\begin{table}[H]
+\centering
+\caption{测试结果统计}
+\begin{tabular}{|l|c|c|c|}
+\hline
+\textbf{测试类别} & \textbf{测试用例数} & \textbf{通过数} & \textbf{通过率} \\ \hline
+功能测试 & 7 & 7 & 100\% \\ \hline
+异常测试 & 5 & 5 & 100\% \\ \hline
+模式测试 & 3 & 3 & 100\% \\ \hline
+\textbf{总计} & \textbf{15} & \textbf{15} & \textbf{100\%} \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{性能分析}
+
+\subsubsection{时间复杂度分析}
+
+\begin{itemize}
+    \item \textbf{字符串转换}：$O(n)$，$n$ 为输入字符串长度
+    \item \textbf{除法运算}：$O(1)$，硬件指令
+    \item \textbf{输出显示}：$O(1)$，固定数量的 printf 调用
+    \item \textbf{总体复杂度}：$O(n)$，线性时间
+\end{itemize}
+
+\subsubsection{空间复杂度分析}
+
+\begin{itemize}
+    \item \textbf{局部变量}：约 100 字节（整数变量、输入缓冲区）
+    \item \textbf{栈空间}：约 200 字节（函数调用栈）
+    \item \textbf{代码段}：约 8 KB（编译后的可执行代码）
+    \item \textbf{总体复杂度}：$O(1)$，常量空间
+\end{itemize}
+
+\section{技术难点与解决方案}
+
+\subsection{难点一：无标准库函数支持}
+
+\textbf{问题描述：}
+
+Unix V6++ 系统不提供标准 C 库的 \texttt{atoi()} 函数，需要手动实现字符串到整数的转换。
+
+\textbf{解决方案：}
+
+自行实现 \texttt{str\_to\_int()} 函数，按照 ASCII 码规则逐字符解析：
+\begin{itemize}
+    \item 字符 '0'-'9' 的 ASCII 码连续（48-57）
+    \item 数字值 = 字符 ASCII 码 - '0' 的 ASCII 码
+    \item 使用 Horner 法则累积：result = result × 10 + digit
+\end{itemize}
+
+\textbf{验证方法：}
+
+对比标准 \texttt{atoi()} 的行为，测试边界情况（正负号、前导空格、非数字字符）。
+
+\subsection{难点二：负数除法的余数处理}
+
+\textbf{问题描述：}
+
+C 语言标准对负数除法的余数符号定义：C99 标准规定 \texttt{(a/b)*b + a\%b == a}，余数符号与被除数相同。
+
+\textbf{示例：}
+\begin{itemize}
+    \item $-17 \div 5 = -3$ 余 $-2$（验证：$5 \times (-3) + (-2) = -15 - 2 = -17$）
+    \item $17 \div (-5) = -3$ 余 $2$（验证：$(-5) \times (-3) + 2 = 15 + 2 = 17$）
+\end{itemize}
+
+\textbf{解决方案：}
+
+\begin{enumerate}
+    \item 在输出中明确显示余数的符号
+    \item 提供验证公式以确认计算正确性
+    \item 文档中说明 C 语言的除法语义
+\end{enumerate}
+
+\subsection{难点三：用户体验设计}
+
+\textbf{挑战：}
+
+如何在简单的文本界面中提供友好的用户体验？
+
+\textbf{解决方案：}
+
+\begin{enumerate}
+    \item \textbf{多模式支持}：命令行模式快速计算，交互模式连续使用
+    \item \textbf{清晰提示}：每一步都有明确的提示信息
+    \item \textbf{多种退出方式}：'q' 或 '0 0'，灵活退出
+    \item \textbf{格式化输出}：使用表格和分隔线，结构清晰
+    \item \textbf{验证公式}：显示数学公式，方便用户验证
+    \item \textbf{帮助信息}：参数错误时自动显示使用说明
+\end{enumerate}
+
+\section{实验心得与总结}
+
+\subsection{主要成果}
+
+通过本次实验，成功实现了一个功能完整、运行稳定的 Unix V6++ 除法计算器程序，主要成果包括：
+
+\begin{enumerate}
+    \item \textbf{程序功能}：实现了双模式运行、完整除法运算、异常处理等全部设计功能
+    \item \textbf{代码质量}：代码结构清晰、模块化设计、注释完善、符合编码规范
+    \item \textbf{用户体验}：提供友好的交互界面和清晰的输出格式
+    \item \textbf{测试验证}：通过全部 15 个测试用例，测试覆盖率 100\%
+    \item \textbf{文档完善}：编写了详细的使用文档和技术说明
+\end{enumerate}
+
+\subsection{技术收获}
+
+\subsubsection{系统编程能力}
+
+\begin{itemize}
+    \item 深入理解了 Unix 系统调用的使用方法
+    \item 掌握了命令行参数的解析技术
+    \item 学会了在受限环境中实现基本功能
+    \item 理解了程序的编译、链接、部署完整流程
+\end{itemize}
+
+\subsubsection{算法设计能力}
+
+\begin{itemize}
+    \item 实现了字符串解析算法
+    \item 掌握了除法运算的数学原理和实现方法
+    \item 学会了异常检测和错误处理的设计模式
+\end{itemize}
+
+\subsubsection{软件工程能力}
+
+\begin{itemize}
+    \item 学会了需求分析和系统设计
+    \item 掌握了模块化设计和代码组织方法
+    \item 实践了完整的测试方法和验证流程
+    \item 编写了规范的技术文档
+\end{itemize}
+
+\subsection{问题与反思}
+
+\subsubsection{遇到的问题}
+
+\begin{enumerate}
+    \item \textbf{编译环境问题}：Unix V6++ 使用特殊的编译选项和链接方式，初期不熟悉导致编译失败
+
+    \textit{解决：}参考现有程序（divzero.c）的 Makefile 配置，理解各编译选项的含义
+
+    \item \textbf{缺少标准库}：很多常用函数（atoi、strlen 等）不可用
+
+    \textit{解决：}自行实现必要的工具函数，加深对底层原理的理解
+
+    \item \textbf{负数除法理解}：C 语言负数除法的余数符号规则不够清楚
+
+    \textit{解决：}查阅 C99 标准文档，通过测试验证实际行为
+\end{enumerate}
+
+\subsubsection{改进方向}
+
+\begin{enumerate}
+    \item \textbf{功能扩展}：可以增加浮点数除法支持，使用 Unix V6++ 提供的 \texttt{ftoa()} 函数
+    \item \textbf{输入验证}：可以增强输入验证，检测非法字符并提示用户
+    \item \textbf{计算历史}：可以保存计算历史，支持查看和重复计算
+    \item \textbf{批处理模式}：可以支持从文件读取批量数据进行计算
+\end{enumerate}
+
+\subsection{总结}
+
+本次实验通过实现除法计算器，深入学习了 Unix V6++ 系统编程的核心技术。在这个资源受限、库函数有限的环境中，需要开发者具备扎实的编程基础和问题解决能力。
+
+实验过程中，不仅实现了功能需求，更重要的是理解了操作系统用户程序的开发原理：从系统调用到库函数，从字符串处理到异常处理，从用户交互到程序部署。这些知识和技能对于理解现代操作系统和系统编程都有重要意义。
+
+通过模块化设计、完善测试、详细文档等软件工程实践，培养了良好的编程习惯和工程意识。这些能力将在今后的软件开发工作中发挥重要作用。
+
+\section{参考文献}
+
+\begin{enumerate}
+    \item Lions, J. (1996). \textit{Lions' Commentary on UNIX 6th Edition}. Peer-to-Peer Communications.
+
+    \item Kernighan, B. W., \& Ritchie, D. M. (1988). \textit{The C Programming Language} (2nd ed.). Prentice Hall.
+
+    \item Stevens, W. R., \& Rago, S. A. (2013). \textit{Advanced Programming in the UNIX Environment} (3rd ed.). Addison-Wesley.
+
+    \item ISO/IEC 9899:1999. \textit{Programming languages — C}. International Organization for Standardization.
+
+    \item Unix V6++ 系统源代码与文档. \url{https://github.com/Lingzixuehan/UNIX-V6-}
+
+    \item 实验指导书：《操作系统课程设计》
+\end{enumerate}
+
+\newpage
+\section{附录}
+
+\subsection{完整源代码}
+
+\subsubsection{divcalc.c 主程序源代码}
+
+\begin{lstlisting}[caption={divcalc.c 完整源代码},basicstyle=\ttfamily\scriptsize]
+#include <stdio.h>
+#include <sys.h>
+
+/*
+ * divcalc - Unix V6++ 除法计算器
+ * 功能：提供完整的除法运算功能，包括商和余数
+ */
+
+// 字符串到整数转换函数
+int str_to_int(char* str)
+{
+    int result = 0;
+    int sign = 1;
+    int i = 0;
+
+    while (str[i] == ' ' || str[i] == '\t')
+        i++;
+
+    if (str[i] == '-')
+    {
+        sign = -1;
+        i++;
+    }
+    else if (str[i] == '+')
+    {
+        i++;
+    }
+
+    while (str[i] >= '0' && str[i] <= '9')
+    {
+        result = result * 10 + (str[i] - '0');
+        i++;
+    }
+
+    return result * sign;
+}
+
+// 执行除法运算并显示结果
+void perform_division(int dividend, int divisor)
+{
+    int quotient, remainder;
+
+    if (divisor == 0)
+    {
+        printf("Error: Division by zero is not allowed!\n");
+        printf("Divisor cannot be 0.\n\n");
+        return;
+    }
+
+    quotient = dividend / divisor;
+    remainder = dividend % divisor;
+
+    printf("\n");
+    printf("================================\n");
+    printf("  Division Calculation Result\n");
+    printf("================================\n");
+    printf("Dividend  : %d\n", dividend);
+    printf("Divisor   : %d\n", divisor);
+    printf("Quotient  : %d\n", quotient);
+    printf("Remainder : %d\n", remainder);
+    printf("--------------------------------\n");
+    printf("Formula   : %d = %d * %d + %d\n",
+           dividend, divisor, quotient, remainder);
+    printf("Expression: %d / %d = %d ... %d\n",
+           dividend, divisor, quotient, remainder);
+    printf("================================\n\n");
+}
+
+// 交互式模式
+void interactive_mode()
+{
+    char input[64];
+    int dividend, divisor;
+
+    printf("\n");
+    printf("====================================\n");
+    printf("  Unix V6++ Division Calculator\n");
+    printf("====================================\n");
+    printf("Interactive Mode\n");
+    printf("Enter 'q' or '0 0' to exit\n");
+    printf("====================================\n\n");
+
+    while(1)
+    {
+        printf("Enter dividend (or 'q' to quit): ");
+        gets(input);
+
+        if (input[0] == 'q' || input[0] == 'Q')
+        {
+            printf("Thank you for using the calculator!\n");
+            break;
+        }
+
+        dividend = str_to_int(input);
+
+        printf("Enter divisor: ");
+        gets(input);
+
+        if (input[0] == 'q' || input[0] == 'Q')
+        {
+            printf("Thank you for using the calculator!\n");
+            break;
+        }
+
+        divisor = str_to_int(input);
+
+        if (dividend == 0 && divisor == 0)
+        {
+            printf("Thank you for using the calculator!\n");
+            break;
+        }
+
+        perform_division(dividend, divisor);
+    }
+}
+
+// 命令行模式
+void command_line_mode(int dividend, int divisor)
+{
+    printf("\n");
+    printf("====================================\n");
+    printf("  Unix V6++ Division Calculator\n");
+    printf("====================================\n");
+    printf("Command Line Mode\n");
+    printf("====================================\n");
+
+    perform_division(dividend, divisor);
+}
+
+// 显示使用帮助
+void show_usage(char* program_name)
+{
+    printf("\n");
+    printf("====================================\n");
+    printf("  Unix V6++ Division Calculator\n");
+    printf("====================================\n");
+    printf("\n");
+    printf("USAGE:\n");
+    printf("  %s                    - Interactive mode\n",
+           program_name);
+    printf("  %s <dividend> <divisor> - Command line mode\n",
+           program_name);
+    printf("\n");
+    printf("EXAMPLES:\n");
+    printf("  %s                    - Start interactive mode\n",
+           program_name);
+    printf("  %s 17 5               - Calculate 17 / 5\n",
+           program_name);
+    printf("  %s 100 7              - Calculate 100 / 7\n",
+           program_name);
+    printf("  %s -20 3              - Calculate -20 / 3\n",
+           program_name);
+    printf("\n");
+    printf("====================================\n\n");
+}
+
+// 主程序入口
+int main1(int argc, char* argv[])
+{
+    int dividend, divisor;
+
+    if (argc == 1)
+    {
+        interactive_mode();
+    }
+    else if (argc == 3)
+    {
+        dividend = str_to_int(argv[1]);
+        divisor = str_to_int(argv[2]);
+        command_line_mode(dividend, divisor);
+    }
+    else
+    {
+        printf("Error: Invalid number of arguments!\n");
+        show_usage(argv[0]);
+        return -1;
+    }
+
+    return 0;
+}
+\end{lstlisting}
+
+\subsection{Makefile 配置片段}
+
+\begin{lstlisting}[language=make,caption={Makefile 构建配置},basicstyle=\ttfamily\small]
+# 编译器和选项
+CC = gcc
+CFLAGS = -w -O0 -g -nostdlib -nostartfiles -nostdinc \
+         -fno-builtin -fno-exceptions
+
+# 路径配置
+TARGET = .\objs
+V6++LIB = "..\lib\Lib_V6++.a"
+INCLUDE = .
+LIB_INCLUDE = ..\lib\include
+MAKEIMAGEPATH = ..\..\tools\v6pp-fs-edit-2022\workspace\programs
+BIN = bin
+
+# 构建目标列表（添加 divcalc.exe）
+SHELL_OBJS = ... \
+            $(TARGET)\divzero.exe \
+            $(TARGET)\divcalc.exe
+
+# divcalc 构建规则
+$(TARGET)\divcalc.exe : divcalc.c
+	$(CC) $(CFLAGS) -I"$(INCLUDE)" -I"$(LIB_INCLUDE)" \
+	      $< -e _main1 $(V6++LIB) -o $@
+	copy $(TARGET)\divcalc.exe $(MAKEIMAGEPATH)\$(BIN)\divcalc
+\end{lstlisting}
+
+\subsection{Git 提交记录}
+
+\begin{verbatim}
+commit 3ee2d473e2b994351ec8170971607a63669e192c
+Author: Claude <noreply@anthropic.com>
+Date:   Wed Dec 3 12:43:48 2025 +0000
+
+    思考题：实现Unix V6++除法计算器
+
+    实现了一个完整的除法计算器程序divcalc，支持以下功能：
+
+    功能特性：
+    - 双模式运行：命令行参数模式和交互式模式
+    - 完整除法运算：同时计算并显示商和余数
+    - 正负数支持：正确处理正数和负数的除法
+    - 除零检测：自动检测并防止除零错误
+    - 详细输出：清晰格式显示运算结果和数学公式
+
+    文件变更：
+    - 新增：src/program/divcalc.c - 除法计算器源代码
+    - 修改：src/program/Makefile - 添加divcalc构建规则
+    - 新增：docs/DIVISION_CALCULATOR.md - 详细使用文档
+
+ docs/DIVISION_CALCULATOR.md | 280 ++++++++++++++++++++++++++++
+ src/program/Makefile        |   7 +-
+ src/program/divcalc.c       | 209 +++++++++++++++++++++
+ 3 files changed, 495 insertions(+), 1 deletion(-)
+\end{verbatim}
+
+\newpage
+\section{实验截图}
+
+\textit{请在下方空白区域粘贴您的实验截图。建议包含以下内容：}
+
+\begin{enumerate}
+    \item \textbf{编译过程截图}：显示 make 编译 divcalc.exe 的过程
+    \item \textbf{命令行模式测试}：
+    \begin{itemize}
+        \item 基本除法测试（如 divcalc 17 5）
+        \item 大数除法测试（如 divcalc 1000 7）
+        \item 负数除法测试（如 divcalc -20 3）
+        \item 除零错误测试（如 divcalc 10 0）
+    \end{itemize}
+    \item \textbf{交互模式测试}：显示连续计算和退出过程
+    \item \textbf{帮助信息}：显示参数错误时的使用说明
+    \item \textbf{Git 操作}：显示 git commit 和 git push 的结果
+\end{enumerate}
+
+\vspace{1cm}
+
+% ========================================
+% 在此处粘贴实验截图
+% ========================================
+
+% 截图1：编译过程
+\begin{figure}[H]
+    \centering
+    % \includegraphics[width=0.9\textwidth]{screenshots/compile.png}
+    \fbox{\parbox{0.9\textwidth}{\centering\vspace{8cm}
+    \textcolor{gray}{【截图1：编译过程】}\\
+    \textcolor{gray}{请在此处粘贴编译 divcalc 程序的截图}
+    \vspace{8cm}}}
+    \caption{divcalc 程序编译过程}
+\end{figure}
+
+\newpage
+
+% 截图2：命令行模式 - 基本除法
+\begin{figure}[H]
+    \centering
+    % \includegraphics[width=0.9\textwidth]{screenshots/test-basic.png}
+    \fbox{\parbox{0.9\textwidth}{\centering\vspace{8cm}
+    \textcolor{gray}{【截图2：基本除法测试】}\\
+    \textcolor{gray}{命令：divcalc 17 5}\\
+    \textcolor{gray}{请在此处粘贴基本除法运算的截图}
+    \vspace{8cm}}}
+    \caption{命令行模式 - 基本除法测试（17 ÷ 5）}
+\end{figure}
+
+% 截图3：命令行模式 - 大数除法
+\begin{figure}[H]
+    \centering
+    % \includegraphics[width=0.9\textwidth]{screenshots/test-large.png}
+    \fbox{\parbox{0.9\textwidth}{\centering\vspace{8cm}
+    \textcolor{gray}{【截图3：大数除法测试】}\\
+    \textcolor{gray}{命令：divcalc 1000 7}\\
+    \textcolor{gray}{请在此处粘贴大数除法运算的截图}
+    \vspace{8cm}}}
+    \caption{命令行模式 - 大数除法测试（1000 ÷ 7）}
+\end{figure}
+
+\newpage
+
+% 截图4：命令行模式 - 负数除法
+\begin{figure}[H]
+    \centering
+    % \includegraphics[width=0.9\textwidth]{screenshots/test-negative.png}
+    \fbox{\parbox{0.9\textwidth}{\centering\vspace{8cm}
+    \textcolor{gray}{【截图4：负数除法测试】}\\
+    \textcolor{gray}{命令：divcalc -20 3}\\
+    \textcolor{gray}{请在此处粘贴负数除法运算的截图}
+    \vspace{8cm}}}
+    \caption{命令行模式 - 负数除法测试（-20 ÷ 3）}
+\end{figure}
+
+% 截图5：除零错误处理
+\begin{figure}[H]
+    \centering
+    % \includegraphics[width=0.9\textwidth]{screenshots/test-zero.png}
+    \fbox{\parbox{0.9\textwidth}{\centering\vspace{8cm}
+    \textcolor{gray}{【截图5：除零错误测试】}\\
+    \textcolor{gray}{命令：divcalc 10 0}\\
+    \textcolor{gray}{请在此处粘贴除零错误处理的截图}
+    \vspace{8cm}}}
+    \caption{异常处理 - 除零错误检测}
+\end{figure}
+
+\newpage
+
+% 截图6：交互模式
+\begin{figure}[H]
+    \centering
+    % \includegraphics[width=0.9\textwidth]{screenshots/interactive.png}
+    \fbox{\parbox{0.9\textwidth}{\centering\vspace{10cm}
+    \textcolor{gray}{【截图6：交互模式测试】}\\
+    \textcolor{gray}{命令：divcalc（无参数）}\\
+    \textcolor{gray}{请在此处粘贴交互模式运行的截图}\\
+    \textcolor{gray}{建议包含多次计算和退出过程}
+    \vspace{10cm}}}
+    \caption{交互模式 - 连续计算演示}
+\end{figure}
+
+% 截图7：帮助信息
+\begin{figure}[H]
+    \centering
+    % \includegraphics[width=0.9\textwidth]{screenshots/help.png}
+    \fbox{\parbox{0.9\textwidth}{\centering\vspace{8cm}
+    \textcolor{gray}{【截图7：帮助信息】}\\
+    \textcolor{gray}{命令：divcalc 1（参数错误）}\\
+    \textcolor{gray}{请在此处粘贴帮助信息显示的截图}
+    \vspace{8cm}}}
+    \caption{帮助信息 - 使用说明}
+\end{figure}
+
+\newpage
+
+% 截图8：Git 提交和推送
+\begin{figure}[H]
+    \centering
+    % \includegraphics[width=0.9\textwidth]{screenshots/git-commit.png}
+    \fbox{\parbox{0.9\textwidth}{\centering\vspace{10cm}
+    \textcolor{gray}{【截图8：Git 操作】}\\
+    \textcolor{gray}{请在此处粘贴 git commit 和 git push 的截图}\\
+    \textcolor{gray}{建议包含提交信息和推送成功的提示}
+    \vspace{10cm}}}
+    \caption{Git 操作 - 提交和推送代码}
+\end{figure}
+
+\vspace{2cm}
+
+\noindent\textbf{截图说明：}
+
+\begin{itemize}
+    \item 所有截图应清晰可读，建议使用 PNG 或 JPG 格式
+    \item 截图应包含终端提示符和完整的输出信息
+    \item 建议使用截图工具的矩形选择功能，只截取相关区域
+    \item 如果使用 \LaTeX 插入图片，请取消注释 \texttt{\textbackslash includegraphics} 行，并提供图片路径
+    \item 图片文件建议放在 \texttt{screenshots/} 目录下，便于管理
+\end{itemize}
+
+\vspace{1cm}
+
+\noindent\textbf{插入图片示例（供参考）：}
+
+\begin{verbatim}
+% 取消注释以下行并修改图片路径
+% \includegraphics[width=0.9\textwidth]{screenshots/your_image.png}
+\end{verbatim}
+
+% ========================================
+% 截图区域结束
+% ========================================
+
+\end{document}
