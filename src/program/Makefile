@@ -50,7 +50,8 @@ SHELL_OBJS =$(TARGET)\cat.exe	\
 			$(TARGET)\trivialProg.exe \
 			$(TARGET)\kill_child.exe \
 			$(TARGET)\immortal.exe \
-			$(TARGET)\divzero.exe
+			$(TARGET)\divzero.exe \
+			$(TARGET)\divcalc.exe
 
 #$(TARGET)\performance.exe
 			
@@ -157,6 +158,10 @@ $(TARGET)\immortal.exe :	immortal.c
 $(TARGET)\divzero.exe :	divzero.c
 	$(CC) $(CFLAGS) -I"$(INCLUDE)" -I"$(LIB_INCLUDE)"  $< -e _main1 $(V6++LIB) -o $@
 	copy $(TARGET)\divzero.exe $(MAKEIMAGEPATH)\$(BIN)\divzero
+
+$(TARGET)\divcalc.exe :	divcalc.c
+	$(CC) $(CFLAGS) -I"$(INCLUDE)" -I"$(LIB_INCLUDE)"  $< -e _main1 $(V6++LIB) -o $@
+	copy $(TARGET)\divcalc.exe $(MAKEIMAGEPATH)\$(BIN)\divcalc
 
 clean:
 	del $(TARGET)\*.exe
