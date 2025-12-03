@@ -10,6 +10,38 @@
  *   - 程序不会因为除零而崩溃，而是继续运行
  */
 
+// 简单的字符串到整数转换函数（因为Unix V6++没有atoi）
+int str_to_int(char* str)
+{
+	int result = 0;
+	int sign = 1;
+	int i = 0;
+
+	// 跳过前导空格
+	while (str[i] == ' ' || str[i] == '\t')
+		i++;
+
+	// 处理符号
+	if (str[i] == '-')
+	{
+		sign = -1;
+		i++;
+	}
+	else if (str[i] == '+')
+	{
+		i++;
+	}
+
+	// 转换数字
+	while (str[i] >= '0' && str[i] <= '9')
+	{
+		result = result * 10 + (str[i] - '0');
+		i++;
+	}
+
+	return result * sign;
+}
+
 // SIGFPE 信号处理函数
 void sig_dzero(int signo)
 {
@@ -26,6 +58,7 @@ void sig_dzero(int signo)
 int main1(int argc, char* argv[])
 {
 	int a, b, c;
+	char input[64];
 
 	// 注册信号处理函数，捕获 SIGFPE（浮点异常/除零异常）
 	if (signal(SIGFPE, sig_dzero) == -1)
@@ -43,10 +76,12 @@ int main1(int argc, char* argv[])
 	while(1)
 	{
 		printf("Enter dividend a: ");
-		scanf("%d", &a);
+		gets(input);
+		a = str_to_int(input);
 
 		printf("Enter divisor b: ");
-		scanf("%d", &b);
+		gets(input);
+		b = str_to_int(input);
 
 		// 退出条件
 		if (a == 0 && b == 0)

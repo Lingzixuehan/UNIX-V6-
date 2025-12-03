@@ -143,23 +143,71 @@ void sig_dzero(int signo)
 
 程序位置：\texttt{src/program/divzero.c}
 
+关键特性：
+\begin{itemize}
+    \item 使用 \texttt{signal(SIGFPE, sig\_dzero)} 注册异常处理函数
+    \item 在信号处理函数中重新注册（Unix V6 特性）
+    \item 主循环持续运行，不会因异常而退出
+    \item 提供友好的用户交互界面
+    \item 使用 \texttt{gets()} 和自定义的 \texttt{str\_to\_int()} 函数处理输入（因为 Unix V6++ 不支持 \texttt{scanf}）
+\end{itemize}
+
+\subsubsection{输入处理实现}
+
+由于 Unix V6++ 系统不提供 \texttt{scanf} 和 \texttt{atoi} 函数，我们需要自己实现字符串到整数的转换：
+
 \begin{lstlisting}
-#include <stdio.h>
-#include <sys.h>
-
-void sig_dzero(int signo)
+// 字符串到整数转换函数
+int str_to_int(char* str)
 {
-    if (signo == SIGFPE)
-    {
-        printf("\n[!] Caught SIGFPE: Division by zero detected!\n");
-        printf("Can't divide by zero!\n");
-        signal(SIGFPE, sig_dzero);
-    }
-}
+    int result = 0;
+    int sign = 1;
+    int i = 0;
 
+    // 跳过前导空格
+    while (str[i] == ' ' || str[i] == '\t')
+        i++;
+
+    // 处理符号
+    if (str[i] == '-')
+    {
+        sign = -1;
+        i++;
+    }
+    else if (str[i] == '+')
+    {
+        i++;
+    }
+
+    // 转换数字
+    while (str[i] >= '0' && str[i] <= '9')
+    {
+        result = result * 10 + (str[i] - '0');
+        i++;
+    }
+
+    return result * sign;
+}
+\end{lstlisting}
+
+使用方式：
+\begin{lstlisting}
+char input[64];
+printf("Enter dividend a: ");
+gets(input);
+a = str_to_int(input);
+
+printf("Enter divisor b: ");
+gets(input);
+b = str_to_int(input);
+\end{lstlisting}
+
+完整的主函数实现：
+\begin{lstlisting}
 int main1(int argc, char* argv[])
 {
     int a, b, c;
+    char input[64];
 
     if (signal(SIGFPE, sig_dzero) == -1)
     {
@@ -173,9 +221,12 @@ int main1(int argc, char* argv[])
     while(1)
     {
         printf("Enter dividend a: ");
-        scanf("%d", &a);
+        gets(input);
+        a = str_to_int(input);
+
         printf("Enter divisor b: ");
-        scanf("%d", &b);
+        gets(input);
+        b = str_to_int(input);
 
         if (a == 0 && b == 0)
         {
@@ -191,14 +242,6 @@ int main1(int argc, char* argv[])
     return 0;
 }
 \end{lstlisting}
-
-关键特性：
-\begin{itemize}
-    \item 使用 \texttt{signal(SIGFPE, sig\_dzero)} 注册异常处理函数
-    \item 在信号处理函数中重新注册（Unix V6 特性）
-    \item 主循环持续运行，不会因异常而退出
-    \item 提供友好的用户交互界面
-\end{itemize}
 
 \subsection{编译配置}
 
@@ -385,6 +428,15 @@ $(TARGET)\divzero.exe : divzero.c
     \item 适合教学和理解基本原理
 \end{itemize}
 
+\subsubsection{有限的标准库函数}
+
+\begin{itemize}
+    \item 不支持 \texttt{scanf}、\texttt{atoi} 等现代标准库函数
+    \item 只提供基本的 \texttt{gets}、\texttt{printf} 等函数
+    \item 需要开发者自己实现部分功能
+    \item 体现了早期 Unix 系统的简洁设计哲学
+\end{itemize}
+
 \section{程序使用说明}
 
 \subsection{编译}
@@ -477,6 +529,24 @@ c = a / b;  // 当 b = 0 时触发 SIGFPE
     \item \textbf{系统稳定性}：防止单个进程异常影响整个系统
     \item \textbf{错误恢复}：允许程序从错误状态恢复并继续运行
 \end{enumerate}
+
+\subsection{实现挑战与解决方案}
+
+\subsubsection{缺少标准库函数}
+
+\begin{itemize}[itemsep=0.5em]
+    \item \textbf{问题}：Unix V6++ 不支持 \texttt{scanf} 和 \texttt{atoi} 函数
+    \item \textbf{解决}：自行实现 \texttt{str\_to\_int} 函数进行字符串到整数的转换
+    \item \textbf{收获}：深入理解标准库函数的底层实现原理
+\end{itemize}
+
+\subsubsection{字符串处理}
+
+\begin{itemize}[itemsep=0.5em]
+    \item 使用 \texttt{gets} 函数读取整行输入
+    \item 手动解析字符串，支持正负数和空格处理
+    \item 体会到底层编程的复杂性和挑战
+\end{itemize}
 
 \section{实验收获}
 
