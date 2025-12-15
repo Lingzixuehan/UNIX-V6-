@@ -1,0 +1,156 @@
+% -*- mode: latex; coding: utf-8 -*-
+\documentclass[11pt]{article}
+\usepackage{ctex}
+\usepackage{geometry}
+\geometry{a4paper,margin=2.5cm}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tikz}
+\usepackage{amsmath,amssymb}
+\title{UNIX~V6++ 调度、定时器与对换习题解答}
+\author{自动生成}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Part 1：时间片轮转调度}
+已知~PA、PB、PC~为三个 CPU bound 进程，静态优先数均为~100，\verb|p_cpu| 初始为~0，PCB 分别为~\verb|proc[8]|、\verb|proc[5]|、\verb|proc[9]|。整数秒~$T$~时刻 PA 先运行。下述分析采用 V6 经典调度算法：优先数 $p\_pri= (p\_cpu/16) + p\_nice + PUSER$，时间片为~1~秒，到期会将~\verb|p_stat| 置为~\verb|SRUN| 并触发调度。
+
+\subsection*{1.1 运行时序图}
+三个进程仅受时钟中断驱动轮转，顺序依次为 PA~$\to$~PB~$\to$~PC~$\to$~PA。每个时间片结束时整数秒时钟中断递减~20 的~\verb|p_cpu|~后再加上过去一秒的~\verb|p_cpu|~累积 30，净增 10。由于三者对称，优先数始终相近，仅靠轮转切换。
+
+\begin{center}
+\begin{tabular}{>{\bfseries}c|cccccc}
+时间 & $T$ & $T{+}1$ & $T{+}2$ & $T{+}3$ & $T{+}4$ & $T{+}5$\\\hline
+现运行 & PA & PB & PC & PA & PB & PC\\
+事件 & 开始运行 & PA 时间片到 & PB 时间片到 & PC 时间片到 & PA 时间片到 & PB 时间片到\\
+\end{tabular}
+\end{center}
+
+\subsection*{1.2 PA 何时再次运行以及现场保护}
+$T{+}1$ 时刻，时钟中断处理程序发现 PA 时间片用尽：
+\begin{itemize}
+  \item 将 PA 的~\verb|p_stat| 置为~\verb|SRUN|，按照优先数把它插入就绪队列；
+  \item 更新~\verb|p_cpu|（加 30 减 20，净加 10），重新计算~\verb|p_pri|；
+  \item 通过调度器~\verb|setrun|/~\verb|swtch|~选择下一个同优先数的进程 PB 运行。
+\end{itemize}
+
+由于三个进程对称且优先数一致，PB 在 $T{+}2$ 用完时间片后让出 CPU，随后 PC 运行一秒。PC 在 $T{+}3$ 用完时间片后再次触发调度，此时队列头部又是 PA，故 PA 在 $T{+}3$ 获得 CPU。
+
+用户态现场的保存/恢复流程如下：
+\begin{enumerate}
+  \item 时钟中断进入内核时，硬件自动把 PC、PSW 入栈，接着中断入口代码保存通用寄存器、栈指针等，形成 PA 的内核态栈帧；
+  \item 调度切换到 PB 前，通过~\verb|swtch|~把当前 PCB 的~\verb|u.u_rsav|、\verb|u.u_ssav| 更新，保存内核栈指针；
+  \item 下次（$T{+}3$）调度回到 PA 时，\verb|swtch|~从~\verb|u.u_rsav|、\verb|u.u_ssav| 恢复内核栈指针，再从中断现场弹出通用寄存器和 PC/PSW，返回用户态继续执行被抢占后的下一条指令。
+\end{enumerate}
+
+\section*{Part 2：定时器服务与 \texttt{sleep}}
+假设在~1025~秒时刻分析：
+\begin{itemize}
+  \item （1）整数秒时钟中断会：递增所有进程的~\verb|p_time|，对用户进程执行 $p\_cpu = p\_cpu + 30 - 20$ 更新优先数；若当前进程时间片到则调用~\verb|swtch|~选择就绪进程；
+  \item （2）下半部的~\verb|sleep|~定时服务维护~\verb|tout|：若~\verb|tout| 为~0 或大于本次设置的到期值，则设为新超时时间；每次整数秒中断减一，到零时调用~\verb|setrun|~唤醒相应进程并重置~\verb|tout|。
+\end{itemize}
+
+PA 调用 \verb|sleep(365)|，进程进入~\verb|SSLEEP|~状态并在~\verb|slpque|~挂起，\verb|tout| 被置为~365~秒后。它在~1025~秒开始睡眠，将在~1025+365=1390~秒左右被定时器唤醒，随后重新调度回到就绪队列，再经过轮转重新运行。
+
+PB 调用 \verb|sleep(5)|，设置的闹钟更早到期，因此~\verb|tout| 会被改写为~5~。PB 在~1030~秒被唤醒。
+
+\section*{Part 3：全嵌套中断下的调度}
+900~秒 PA 执行 \verb|sleep(100)| 入睡（闹钟 100~秒后到期）。998~秒 PB 发起磁盘 \verb|read|，触发磁盘 IO，PB 在磁盘中断完成前高优先级睡眠。1000~秒运行进程为 PX。假设时钟中断优先级高于磁盘中断，讨论两种嵌套顺序。
+
+\subsection*{3.1 先响应磁盘中断}
+\begin{enumerate}
+  \item 1000~秒磁盘中断打断 PX，硬件入栈现场，内核保存通用寄存器。
+  \item 磁盘中断处理结束 IO，调用~\verb|wakeup|~唤醒 PB（置~\verb|p_stat=SRUN|，调整~\verb|p_pri| 为 -50 左右的高优先级），返回前检查有更高优先级的待处理中断——发现时钟中断挂起。
+  \item 内核立即转入时钟中断：递减~\verb|tout|，发现 PA 的闹钟到期（100~秒），调用~\verb|setrun|~唤醒 PA，同时修正当前运行进程 PX 的~\verb|p_cpu|、时间片。
+  \item 中断链返回到调度点，\verb|swtch|~根据优先数选择最高者 PB（IO 完成后优先级最高），PX 被重新入队。PB 运行完系统调用后返回用户态。
+\end{enumerate}
+
+\subsection*{3.2 先响应时钟中断}
+\begin{enumerate}
+  \item 1000~秒时钟中断先到，打断 PX，更新各进程~\verb|p_cpu|、时间片，递减~\verb|tout| 至~0，唤醒 PA 并将其优先数提升。
+  \item 返回时钟中断尾部时发现磁盘中断挂起，于是立即进入磁盘中断处理，唤醒 PB 并更新其~\verb|p_pri|。
+  \item 中断链完成后进入调度：PB、PA 都刚被唤醒，PB 因高优先级 IO 完成（-50）被选中运行，PA 入就绪队列，PX 退回就绪队列或继续等待下一轮。
+\end{enumerate}
+
+两种顺序下，PB 都优先恢复执行，其后按优先级与时间片轮转在 PB 与 PA 之间调度，PX 失去 CPU。
+
+\section*{Part 4：盘交换区}
+\subsection*{定义}
+盘交换区（swap area）是磁盘上一块连续空间，用于暂存被换出的进程映像，包括正文段、数据段和用户栈。它由~\verb|swplo|、\verb|nswap| 描述，在 V6 中通常位于根文件系统之后的磁盘区域。
+
+\subsection*{使用策略}
+\begin{itemize}
+  \item 当内存不足且需要调度就绪进程时，调度器会在低优先级睡眠/暂停进程中选择牺牲者，调用~\verb|xswap|~将其写入交换区并清除~\verb|SLOAD| 标志；
+  \item 被唤醒而不在内存的进程通过~\verb|swapin|/\verb|xswap|~分配内存并从交换区读回，成功后置位~\verb|SLOAD| 并投入就绪；
+  \item 内核保证 0# 进程（\verb|swapper|）在缺内存时运行，对换期间它可能睡眠等待 IO 完成；完成换入后通过~\verb|setrun|~把新换入进程放入就绪队列。
+\end{itemize}
+
+\section*{Part 5：对换与调度综合题}
+\subsection*{初始态}
+T0 时刻各进程状态如表~\ref{tab:init}。内存已满。p3 在交换区，\verb|SLOAD| 置位为 0。
+
+\begin{table}[h]
+\centering
+\begin{tabular}{c|c|c|c|c}
+\toprule
+序号 & 占用空间 & 状态 & 位置 & 内存起始地址\\
+\midrule
+0\# & -- & 高睡（RunOut） & SLOAD/SSYS & 0x003ff000\\
+p1 & 40K & 低睡 & SLOAD & 0x00408000\\
+p2 & 30K & 执行 & SLOAD & 0x00430000\\
+p3 & 30K & 低睡 & ~SLOAD & 0x00450000\\
+\bottomrule
+\end{tabular}
+\caption{T0 时刻进程状态}
+\label{tab:init}
+\end{table}
+
+\subsection*{(1) T0 时刻 p2 执行 \texttt{read}}
+\begin{enumerate}
+  \item p2 进入系统调用，缺少高速缓存命中，发起磁盘 IO 并置为高优先级睡眠：\verb|p_stat=SSLEEP|，\verb|p_pri=-50|。放弃 CPU。
+  \item 调度器选内存中唯一就绪进程 p1 运行（若 p1 仍低睡则唤醒失败，此处假设它可运行）。0# 仍在高睡等待对换触发。
+\end{enumerate}
+
+此时表格更新为：
+
+\begin{longtable}{c|c|c|c|c}
+\toprule
+序号 & 占用空间 & 状态 & 位置 & 内存起始地址\\\midrule
+0\# & -- & 高睡（RunOut） & SLOAD/SSYS & 0x003ff000\\
+p1 & 40K & 执行/就绪 & SLOAD & 0x00408000\\
+p2 & 30K & 高睡（SSLEEP，-50） & SLOAD & 0x00430000\\
+p3 & 30K & 低睡 & ~SLOAD & 0x00450000\\
+\bottomrule
+\end{longtable}
+
+\subsection*{(2) T1=T0+1 秒，p2 已返回用户态，p3 的 IO 完成}
+\begin{enumerate}
+  \item 整数秒时钟中断在运行的 p2 上触发，递增~\verb|p_time|、调整~\verb|p_cpu|，时间片可能用完并引发调度。
+  \item 磁盘中断结束 p3 的 IO，调用~\verb|wakeup|~使 p3 变为就绪；但 p3 不在内存（~\verb|SLOAD| 清零），需换入。
+  \item 调度器唤醒 0# 进程执行 \verb|sched()|。内存已满，0# 选择低优先级睡眠的 p1 或 p2 作为牺牲者：
+    \begin{itemize}
+      \item 若 p2 时间片刚用完并处于就绪状态，优先换出~\verb|p_stat==SRUN| 且优先数高的 p2 以避免杀死活跃进程；
+      \item 0# 调用~\verb|xswap|~把被选进程写入交换区，清~\verb|SLOAD|，释放 30K 或 40K 内存；
+      \item 为 p3 分配释放出的物理块，调用~\verb|swapin|~读回 p3 映像，置~\verb|SLOAD| 并~\verb|p_stat=SRUN|。
+    \end{itemize}
+  \item 换入完成后 0# 再次~\verb|sleep(&RunOut,-100)|，调度器从就绪队列选择优先数最高者运行。若 p2 已在用户态就绪，p2 与换入后的 p3 按优先数（通常 p2 因近期运行 p\_cpu 较高、优先数略低）轮转。
+\end{enumerate}
+
+最终表格示例（假设换出 p1，换入 p3）：
+
+\begin{longtable}{c|c|c|c|c}
+\toprule
+序号 & 占用空间 & 状态 & 位置 & 内存起始地址\\\midrule
+0\# & -- & 高睡（RunOut） & SLOAD/SSYS & 0x003ff000\\
+p1 & 40K & 就绪/高睡 & ~SLOAD & 0x00408000\\
+p2 & 30K & 就绪 & SLOAD & 0x00430000\\
+p3 & 30K & 就绪/执行 & SLOAD & 0x00408000\\
+\bottomrule
+\end{longtable}
+
+若换出的是 p2，则 p3 占据 p2 原址，p2 移至交换区，调度时 p3 先运行。
+
+\end{document}
