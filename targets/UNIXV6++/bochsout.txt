@@ -30,7 +30,7 @@
 00000000000i[     ]   SB16 support: no
 00000000000i[     ]   USB support: yes
 00000000000i[     ]   VGA extension support: vbe cirrus
-00000000000i[MEM0 ] allocated memory at 04B2E020. after alignment, vector=04B2F000
+00000000000i[MEM0 ] allocated memory at 04BEE020. after alignment, vector=04BEF000
 00000000000i[MEM0 ] 32.00MB
 00000000000i[MEM0 ] mem block size = 0x00100000, blocks=32
 00000000000i[MEM0 ] rom at 0xfffe0000/131072 ('E:\UNIX V6++V1\Bochs-2.6/bios/BIOS-bochs-latest')
@@ -40,7 +40,7 @@
 00000000000i[PCI  ] PIIX3 PCI-to-ISA bridge present at device 1, function 0
 00000000000i[     ] init_dev of 'cmos' plugin device by virtual method
 00000000000i[CMOS ] Using local time for initial clock
-00000000000i[CMOS ] Setting initial clock to: Mon Dec 01 16:52:39 2025 (time0=1764579159)
+00000000000i[CMOS ] Setting initial clock to: Mon Mar 23 15:47:47 2026 (time0=1774252067)
 00000000000i[     ] init_dev of 'dma' plugin device by virtual method
 00000000000i[DMA  ] channel 4 used by cascade
 00000000000i[     ] init_dev of 'pic' plugin device by virtual method
@@ -185,27 +185,27 @@
 00017910462i[KBD  ] wheel mouse mode enabled
 00017989507i[MEM0 ] allocate_block: block=0x2 used 0x4 of 0x20
 00018135070i[MEM0 ] allocate_block: block=0x3 used 0x5 of 0x20
-00018497472i[MEM0 ] allocate_block: block=0x4 used 0x6 of 0x20
-00019136053i[MEM0 ] allocate_block: block=0x7 used 0x7 of 0x20
-00396804000p[WGUI ] >>PANIC<< POWER button turned off.
-00396804000i[CPU0 ] CPU is in protected mode (halted)
-00396804000i[CPU0 ] CS.mode = 32 bit
-00396804000i[CPU0 ] SS.mode = 32 bit
-00396804000i[CPU0 ] EFER   = 0x00000000
-00396804000i[CPU0 ] | EAX=c03fff10  EBX=00000002  ECX=00000001  EDX=c011e400
-00396804000i[CPU0 ] | ESP=c03fff0c  EBP=c03fff1c  ESI=000e0000  EDI=0000ffac
-00396804000i[CPU0 ] | IOPL=0 id vip vif ac vm rf nt of df IF tf sf ZF af PF cf
-00396804000i[CPU0 ] | SEG sltr(index|ti|rpl)     base    limit G D
-00396804000i[CPU0 ] |  CS:0008( 0001| 0|  0) 00000000 ffffffff 1 1
-00396804000i[CPU0 ] |  DS:0010( 0002| 0|  0) 00000000 ffffffff 1 1
-00396804000i[CPU0 ] |  SS:0010( 0002| 0|  0) 00000000 ffffffff 1 1
-00396804000i[CPU0 ] |  ES:0010( 0002| 0|  0) 00000000 ffffffff 1 1
-00396804000i[CPU0 ] |  FS:0000( 0000| 0|  0) 00000000 00000000 0 0
-00396804000i[CPU0 ] |  GS:0000( 0000| 0|  0) 00000000 00000000 0 0
-00396804000i[CPU0 ] | EIP=c010d7a2 (c010d7a2)
-00396804000i[CPU0 ] | CR0=0xe0000011 CR2=0x00000000
-00396804000i[CPU0 ] | CR3=0x00200000 CR4=0x00000000
-00396804000i[CPU0 ] 0xc010d7a2>> jmp .-217 (0xc010d6ce) : E927FFFFFF
-00396804000i[CMOS ] Last time is 1764579258 (Mon Dec 01 16:54:18 2025)
-00396804000i[     ] restoring default signal behavior
-00396804000i[CTRL ] quit_sim called with exit code 1
+00018499651i[MEM0 ] allocate_block: block=0x4 used 0x6 of 0x20
+00019142651i[MEM0 ] allocate_block: block=0x7 used 0x7 of 0x20
+00475204000p[WGUI ] >>PANIC<< POWER button turned off.
+00475204000i[CPU0 ] CPU is in protected mode (halted)
+00475204000i[CPU0 ] CS.mode = 32 bit
+00475204000i[CPU0 ] SS.mode = 32 bit
+00475204000i[CPU0 ] EFER   = 0x00000000
+00475204000i[CPU0 ] | EAX=c03fff10  EBX=00000002  ECX=00000001  EDX=c011e400
+00475204000i[CPU0 ] | ESP=c03fff0c  EBP=c03fff1c  ESI=000e0000  EDI=0000ffac
+00475204000i[CPU0 ] | IOPL=0 id vip vif ac vm rf nt of df IF tf sf ZF af PF cf
+00475204000i[CPU0 ] | SEG sltr(index|ti|rpl)     base    limit G D
+00475204000i[CPU0 ] |  CS:0008( 0001| 0|  0) 00000000 ffffffff 1 1
+00475204000i[CPU0 ] |  DS:0010( 0002| 0|  0) 00000000 ffffffff 1 1
+00475204000i[CPU0 ] |  SS:0010( 0002| 0|  0) 00000000 ffffffff 1 1
+00475204000i[CPU0 ] |  ES:0010( 0002| 0|  0) 00000000 ffffffff 1 1
+00475204000i[CPU0 ] |  FS:0000( 0000| 0|  0) 00000000 00000000 0 0
+00475204000i[CPU0 ] |  GS:0000( 0000| 0|  0) 00000000 00000000 0 0
+00475204000i[CPU0 ] | EIP=c010d7a2 (c010d7a2)
+00475204000i[CPU0 ] | CR0=0xe0000011 CR2=0x00000000
+00475204000i[CPU0 ] | CR3=0x00200000 CR4=0x00000000
+00475204000i[CPU0 ] 0xc010d7a2>> jmp .-217 (0xc010d6ce) : E927FFFFFF
+00475204000i[CMOS ] Last time is 1774252185 (Mon Mar 23 15:49:45 2026)
+00475204000i[     ] restoring default signal behavior
+00475204000i[CTRL ] quit_sim called with exit code 1
