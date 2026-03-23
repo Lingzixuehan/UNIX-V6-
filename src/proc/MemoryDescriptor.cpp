@@ -9,7 +9,7 @@ void MemoryDescriptor::Initialize()
 {
 	KernelPageManager& kernelPageManager = Kernel::Instance().GetKernelPageManager();
 	
-	/* m_UserPageTableArray��Ҫ��AllocMemory()���ص������ڴ��ַ + 0xC0000000 */
+	/* m_UserPageTableArray��Ҫ��AllocMemory()���ص������ڴ��ַ + 0xC0000000 */
 	this->m_UserPageTableArray = (PageTable*)(kernelPageManager.AllocMemory(sizeof(PageTable) * USER_SPACE_PAGE_TABLE_CNT) + Machine::KERNEL_SPACE_START_ADDRESS);
 }
 
@@ -24,10 +24,9 @@ void MemoryDescriptor::Release()
 }
 
 unsigned int MemoryDescriptor::MapEntry(unsigned long virtualAddress, unsigned int size, unsigned long phyPageIdx, bool isReadWrite)
-{	
+{
 	unsigned long address = virtualAddress - USER_SPACE_START_ADDRESS;
-	
-	//�����pagetable����һ����ַ��ʼӳ��
+
 	unsigned long startIdx = address >> 12;
 	unsigned long cnt = ( size + (PageManager::PAGE_SIZE - 1) )/ PageManager::PAGE_SIZE;
 
@@ -36,6 +35,7 @@ unsigned int MemoryDescriptor::MapEntry(unsigned long virtualAddress, unsigned i
 	{
 		entrys[i].m_Present = 0x1;
 		entrys[i].m_ReadWriter = isReadWrite;
+		entrys[i].m_UserSupervisor = 1;		/* U bit: 用户态可访问 */
 		entrys[i].m_PageBaseAddress = phyPageIdx;
 	}
 	return phyPageIdx;
@@ -85,7 +85,7 @@ bool MemoryDescriptor::EstablishUserPageTable( unsigned long textVirtualAddress,
 {
 	User& u = Kernel::Instance().GetUser();
 
-	/* ��������������û��������8M�ĵ�ַ�ռ����� */
+	/* ��������������û��������8M�ĵ�ַ�ռ����� */
 	if ( textSize + dataSize + stackSize  + PageManager::PAGE_SIZE > USER_SPACE_SIZE - textVirtualAddress)
 	{
 		u.u_error = User::ENOMEM;
@@ -95,19 +95,32 @@ bool MemoryDescriptor::EstablishUserPageTable( unsigned long textVirtualAddress,
 
 	this->ClearUserPageTable();
 
-	/* ��ҳ��ƫ����phyPageIndex == 0��Ϊ���Ķν�����Ե�ַӳ�ձ� */
-	unsigned int phyPageIndex = 0;
-	phyPageIndex = this->MapEntry(textVirtualAddress, textSize, phyPageIndex, false);
+	/*
+	 * 离散化：各段直接使用绝对物理帧号存入页表，不再存储相对偏移量。
+	 * MapToPageTable() 只需将这些帧号原样拷贝到系统页表，无需再加基址偏移。
+	 */
 
-	/* �������ʼ��ַphyPageIndexΪ1��ppda��ռ��1ҳ4K��С�����ڴ棬Ϊ���ݶν�����Ե�ַӳ�ձ� */
-	phyPageIndex = 1;
-	phyPageIndex = this->MapEntry(dataVirtualAddress, dataSize, phyPageIndex, true);
+	/* 文本段：帧号 = x_caddr / PAGE_SIZE，即文本在物理内存中的实际起始帧 */
+	unsigned int textBaseFrame = 0;
+	if ( u.u_procp->p_textp != NULL )
+	{
+		textBaseFrame = u.u_procp->p_textp->x_caddr >> 12;
+	}
+	this->MapEntry(textVirtualAddress, textSize, textBaseFrame, false);
 
-	/* ���������ݶ�֮��Ϊ��ջ�ν�����Ե�ַӳ�ձ� */
+	/*
+	 * 数据段：帧号从 (p_addr >> 12) + 1 开始。
+	 * p_addr 的第 0 帧是 PPDA（用户结构体），不映射到用户虚拟地址空间；
+	 * 数据页从第 1 帧起依次向后排列。
+	 */
+	unsigned int dataBaseFrame = (u.u_procp->p_addr >> 12) + 1;
+	unsigned int nextFrame = this->MapEntry(dataVirtualAddress, dataSize, dataBaseFrame, true);
+
+	/* 栈段：紧接数据页之后，映射到用户虚拟地址空间高端（靠近 0x800000） */
 	unsigned long stackStartAddress = (USER_SPACE_START_ADDRESS + USER_SPACE_SIZE - stackSize) & 0xFFFFF000;
-	this->MapEntry(stackStartAddress, stackSize, phyPageIndex, true);
+	this->MapEntry(stackStartAddress, stackSize, nextFrame, true);
 
-	/* ����Ե�ַӳ�ձ��������Ķκ����ݶ����ڴ��е���ʼ��ַpText->x_caddr��p_addr�������û�̬�ڴ�����ҳ��ӳ�� */
+	/* 将绝对帧号写入系统页表，使新建地址映射关系立即生效 */
 	this->MapToPageTable();
 	return true;
 }
@@ -131,6 +144,27 @@ void MemoryDescriptor::ClearUserPageTable()
 		}
 	}
 
+}
+
+void MemoryDescriptor::RebaseDataFrames(long delta)
+{
+	if ( this->m_UserPageTableArray == NULL || delta == 0 )
+		return;
+
+	/*
+	 * 离散化辅助：进程的 p_addr 发生变化（Expand 重新分配了更大的物理块）时，
+	 * 将页表中所有可读写（数据段/栈段）页的帧号整体平移 delta。
+	 * 只调整 RW 页（数据/栈），RO 页（文本段，帧号来自共享 x_caddr）不受影响。
+	 */
+	PageTableEntry* entrys = (PageTableEntry*)this->m_UserPageTableArray;
+	unsigned int total = Machine::USER_PAGE_TABLE_CNT * PageTable::ENTRY_CNT_PER_PAGETABLE;
+	for ( unsigned int i = 0; i < total; i++ )
+	{
+		if ( entrys[i].m_Present && entrys[i].m_ReadWriter )
+		{
+			entrys[i].m_PageBaseAddress = (unsigned int)((long)entrys[i].m_PageBaseAddress + delta);
+		}
+	}
 }
 
 void MemoryDescriptor::DisplayPageTable()
@@ -162,43 +196,38 @@ void MemoryDescriptor::MapToPageTable()
 	if(u.u_MemoryDescriptor.m_UserPageTableArray == NULL)
 		return;
 
+	/*
+	 * 离散化后，m_UserPageTableArray 中已存储绝对物理帧号，
+	 * 直接拷贝到系统页表即可，不再需要加 textPF / pAddrPF 偏移。
+	 * 同时为用户态页设置 U bit（m_UserSupervisor=1），
+	 * 确保用户态代码能访问自身的虚拟地址空间。
+	 */
 	PageTable* pUserPageTable = Machine::Instance().GetUserPageTableArray();
-	unsigned int textPF = 0;
-	if ( u.u_procp->p_textp != NULL )
-	{
-		textPF = u.u_procp->p_textp->x_caddr >> 12;
-	}
-
-	unsigned int pAddrPF = u.u_procp->p_addr >> 12;
 
 	for (unsigned int i = 0; i < Machine::USER_PAGE_TABLE_CNT; i++)
 	{
 		for ( unsigned int j = 0; j < PageTable::ENTRY_CNT_PER_PAGETABLE; j++ )
 		{
-			pUserPageTable[i].m_Entrys[j].m_Present = 0;   // ��0��ʾ���߼�ҳ������
+			pUserPageTable[i].m_Entrys[j].m_Present = 0;
 
 			if ( 1 == this->m_UserPageTableArray[i].m_Entrys[j].m_Present )
 			{
-				if ( 0 == this->m_UserPageTableArray[i].m_Entrys[j].m_ReadWriter )      // RO�߼�ҳ
-				{
-					pUserPageTable[i].m_Entrys[j].m_Present = 1;
-					pUserPageTable[i].m_Entrys[j].m_ReadWriter = 0;
-					pUserPageTable[i].m_Entrys[j].m_PageBaseAddress = this->m_UserPageTableArray[i].m_Entrys[j].m_PageBaseAddress + textPF;
-				}
-				else if ( 1 == this->m_UserPageTableArray[i].m_Entrys[j].m_ReadWriter )    // RW�߼�ҳ
-				{
-					pUserPageTable[i].m_Entrys[j].m_Present = 1;
-					pUserPageTable[i].m_Entrys[j].m_ReadWriter = 1;
-					pUserPageTable[i].m_Entrys[j].m_PageBaseAddress = this->m_UserPageTableArray[i].m_Entrys[j].m_PageBaseAddress + pAddrPF;
-				}
+				/* 将进程页表中的绝对帧号原样映射到系统页表，并置 U bit */
+				pUserPageTable[i].m_Entrys[j].m_Present       = 1;
+				pUserPageTable[i].m_Entrys[j].m_ReadWriter     = this->m_UserPageTableArray[i].m_Entrys[j].m_ReadWriter;
+				pUserPageTable[i].m_Entrys[j].m_UserSupervisor = 1;   /* U bit: 允许用户态访问 */
+				pUserPageTable[i].m_Entrys[j].m_PageBaseAddress = this->m_UserPageTableArray[i].m_Entrys[j].m_PageBaseAddress;
 			}
 		}
 	}
 
-	pUserPageTable[0].m_Entrys[0].m_Present = 1;
-	pUserPageTable[0].m_Entrys[0].m_ReadWriter = 1;
+	/* 虚拟地址 0x0 映射到物理帧 0，供运行时/信号处理存根使用 */
+	pUserPageTable[0].m_Entrys[0].m_Present        = 1;
+	pUserPageTable[0].m_Entrys[0].m_ReadWriter      = 1;
+	pUserPageTable[0].m_Entrys[0].m_UserSupervisor  = 1;
 	pUserPageTable[0].m_Entrys[0].m_PageBaseAddress = 0;
 
+	/* 修改 PTE 后必须刷新 TLB，使新映射关系立即生效 */
 	FlushPageDirectory();
 }
 
