@@ -1,0 +1,384 @@
+% -*- mode: latex; coding: utf-8 -*-
+\documentclass[12pt]{article}
+\usepackage{ctex}
+\usepackage{geometry}
+\geometry{a4paper, margin=2.5cm}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{enumitem}
+
+% 代码样式
+\lstset{
+    language=C++,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{gray}\itshape,
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    numbersep=8pt,
+    frame=single,
+    breaklines=true,
+    breakatwhitespace=true,
+    tabsize=4,
+    showstringspaces=false,
+    captionpos=b,
+    xleftmargin=2em,
+    framexleftmargin=1.5em,
+}
+
+\title{\textbf{UNIX V6++ 内存离散化实验报告} \\[0.5em]
+\large 用绝对帧号替换相对偏移，正确设置 U bit}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+%=====================================================================
+\section{实验目的}
+%=====================================================================
+
+\begin{enumerate}[leftmargin=2em]
+    \item 理解 UNIX V6++ 操作系统中用户态页表的组织方式和虚拟地址映射机制。
+    \item 掌握 x86 保护模式下页表项（PTE）中 Present、Read/Write、User/Supervisor 等标志位的含义与作用。
+    \item 将原有的\textbf{相对偏移量}页表映射方案改造为\textbf{绝对物理帧号}方案（即"离散化"），消除 \texttt{MapToPageTable()} 在运行时动态加偏移的开销，简化地址映射逻辑。
+    \item 正确设置页表项的 \textbf{U bit}（User/Supervisor），使用户态代码能够访问自身的虚拟地址空间。
+    \item 验证 \texttt{fork()}、\texttt{Expand()} 等场景下页表帧号的正确维护。
+\end{enumerate}
+
+%=====================================================================
+\section{实验环境}
+%=====================================================================
+
+\begin{table}[H]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{项目} & \textbf{说明} \\
+\midrule
+操作系统平台 & UNIX V6++（基于 x86 保护模式的教学 OS） \\
+开发语言     & C++ \\
+编译工具     & GCC / G++ 交叉编译工具链 \\
+调试工具     & QEMU + GDB \\
+版本管理     & Git \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%=====================================================================
+\section{实验原理}
+%=====================================================================
+
+\subsection{UNIX V6++ 用户空间内存布局}
+
+UNIX V6++ 为每个用户进程分配 8MB 的虚拟地址空间（\texttt{0x0 -- 0x800000}），由 2 个页表管理，每个页表包含 1024 个页表项（PTE），每页 4KB。进程的虚拟地址空间布局如下：
+
+\begin{table}[H]
+\centering
+\begin{tabular}{ccc}
+\toprule
+\textbf{段} & \textbf{虚拟地址范围} & \textbf{属性} \\
+\midrule
+文本段（Text）  & 低地址起始 & 只读（RO），可共享 \\
+数据段（Data）  & 紧接文本段之后 & 可读写（RW） \\
+栈段（Stack）   & 靠近 0x800000 高端 & 可读写（RW） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{原有方案：相对偏移量}
+
+在改造前，进程页表中存储的是各段相对于基地址的\textbf{偏移量}（页为单位）：
+\begin{itemize}
+    \item 文本段 PTE 中存储相对于 \texttt{x\_caddr} 的偏移；
+    \item 数据段/栈段 PTE 中存储相对于 \texttt{p\_addr} 的偏移。
+\end{itemize}
+
+每次调用 \texttt{MapToPageTable()} 将进程页表映射到系统页表时，需要动态计算：
+\[
+\text{系统 PTE 帧号} = \text{进程 PTE 偏移} +
+\begin{cases}
+\texttt{x\_caddr} \gg 12 & \text{（文本段，RO）} \\
+\texttt{p\_addr} \gg 12 & \text{（数据/栈段，RW）}
+\end{cases}
+\]
+
+这种方案的缺点：
+\begin{enumerate}
+    \item \texttt{MapToPageTable()} 逻辑复杂，需要区分 RO/RW 页并分别加不同基址。
+    \item 每次进程切换时都要重新计算，增加上下文切换开销。
+    \item 缺少 U bit 设置，用户态代码无法正常访问自身页面。
+\end{enumerate}
+
+\subsection{新方案：绝对物理帧号（离散化）}
+
+改造后，进程页表 \texttt{m\_UserPageTableArray} 中直接存储\textbf{绝对物理帧号}：
+\begin{itemize}
+    \item 文本段帧号 $= \texttt{x\_caddr} / \texttt{PAGE\_SIZE}$；
+    \item 数据段帧号从 $(\texttt{p\_addr} \gg 12) + 1$ 开始（第 0 帧为 PPDA）；
+    \item 栈段帧号紧接数据段之后。
+\end{itemize}
+
+\texttt{MapToPageTable()} 只需将帧号\textbf{原样拷贝}到系统页表，同时设置 U bit，逻辑大幅简化。
+
+当进程物理内存基地址发生变化（如 \texttt{Expand()}、\texttt{fork()}）时，通过 \texttt{RebaseDataFrames(delta)} 对 RW 页帧号整体平移，RO 页（共享文本段）不受影响。
+
+%=====================================================================
+\section{实验步骤与关键代码}
+%=====================================================================
+
+\subsection{步骤一：修改 MemoryDescriptor.h —— 新增 RebaseDataFrames 接口}
+
+为 \texttt{MemoryDescriptor} 类新增 \texttt{RebaseDataFrames(long delta)} 方法声明，用于在进程物理内存重分配时平移页表帧号。
+
+\begin{lstlisting}[caption={MemoryDescriptor.h 新增声明}]
+/*
+ * 离散化辅助函数：当进程物理内存基地址变化时，
+ * 将 m_UserPageTableArray 中所有 RW 页表项的帧号加上 delta，
+ * 文本(RO)页不受影响（共享文本段，帧号不变）。
+ * delta = (newAddr - oldAddr) / PAGE_SIZE
+ */
+void RebaseDataFrames(long delta);
+\end{lstlisting}
+
+\subsection{步骤二：修改 EstablishUserPageTable() —— 使用绝对帧号}
+
+重写 \texttt{EstablishUserPageTable()} 函数，使各段直接以绝对物理帧号存入页表：
+
+\begin{lstlisting}[caption={EstablishUserPageTable 核心逻辑}]
+/* 文本段：帧号 = x_caddr / PAGE_SIZE */
+unsigned int textBaseFrame = 0;
+if ( u.u_procp->p_textp != NULL )
+{
+    textBaseFrame = u.u_procp->p_textp->x_caddr >> 12;
+}
+this->MapEntry(textVirtualAddress, textSize, textBaseFrame, false);
+
+/* 数据段：帧号从 (p_addr >> 12) + 1 开始，跳过 PPDA */
+unsigned int dataBaseFrame = (u.u_procp->p_addr >> 12) + 1;
+unsigned int nextFrame = this->MapEntry(
+    dataVirtualAddress, dataSize, dataBaseFrame, true);
+
+/* 栈段：紧接数据段之后 */
+unsigned long stackStartAddress =
+    (USER_SPACE_START_ADDRESS + USER_SPACE_SIZE - stackSize)
+    & 0xFFFFF000;
+this->MapEntry(stackStartAddress, stackSize, nextFrame, true);
+\end{lstlisting}
+
+\subsection{步骤三：修改 MapEntry() —— 设置 U bit}
+
+在 \texttt{MapEntry()} 中为每个 PTE 设置 \texttt{m\_UserSupervisor = 1}，允许用户态代码访问：
+
+\begin{lstlisting}[caption={MapEntry 设置 U bit}]
+for (...)
+{
+    entrys[i].m_Present = 0x1;
+    entrys[i].m_ReadWriter = isReadWrite;
+    entrys[i].m_UserSupervisor = 1;  /* U bit: 用户态可访问 */
+    entrys[i].m_PageBaseAddress = phyPageIdx;
+}
+\end{lstlisting}
+
+\subsection{步骤四：简化 MapToPageTable() —— 直接拷贝帧号}
+
+改造后的 \texttt{MapToPageTable()} 不再区分 RO/RW 分别加偏移，而是直接拷贝绝对帧号并统一设置 U bit：
+
+\begin{lstlisting}[caption={MapToPageTable 简化逻辑}]
+for (unsigned int i = 0; i < Machine::USER_PAGE_TABLE_CNT; i++)
+{
+    for (unsigned int j = 0; j < PageTable::ENTRY_CNT_PER_PAGETABLE; j++)
+    {
+        pUserPageTable[i].m_Entrys[j].m_Present = 0;
+        if (1 == this->m_UserPageTableArray[i].m_Entrys[j].m_Present)
+        {
+            pUserPageTable[i].m_Entrys[j].m_Present       = 1;
+            pUserPageTable[i].m_Entrys[j].m_ReadWriter     =
+                this->m_UserPageTableArray[i].m_Entrys[j].m_ReadWriter;
+            pUserPageTable[i].m_Entrys[j].m_UserSupervisor = 1;
+            pUserPageTable[i].m_Entrys[j].m_PageBaseAddress =
+                this->m_UserPageTableArray[i].m_Entrys[j]
+                    .m_PageBaseAddress;
+        }
+    }
+}
+\end{lstlisting}
+
+\subsection{步骤五：实现 RebaseDataFrames() —— 帧号平移}
+
+当 \texttt{p\_addr} 发生变化时，遍历页表中所有 RW 页（数据段/栈段）的帧号，整体加上 \texttt{delta}：
+
+\begin{lstlisting}[caption={RebaseDataFrames 实现}]
+void MemoryDescriptor::RebaseDataFrames(long delta)
+{
+    if (this->m_UserPageTableArray == NULL || delta == 0)
+        return;
+
+    PageTableEntry* entrys =
+        (PageTableEntry*)this->m_UserPageTableArray;
+    unsigned int total = Machine::USER_PAGE_TABLE_CNT
+        * PageTable::ENTRY_CNT_PER_PAGETABLE;
+    for (unsigned int i = 0; i < total; i++)
+    {
+        if (entrys[i].m_Present && entrys[i].m_ReadWriter)
+        {
+            entrys[i].m_PageBaseAddress =
+                (unsigned int)((long)entrys[i].m_PageBaseAddress
+                + delta);
+        }
+    }
+}
+\end{lstlisting}
+
+\subsection{步骤六：修改 Process::Expand() —— 扩展时更新帧号}
+
+在 \texttt{Expand()} 分配新内存块后、拷贝旧内容前，先调用 \texttt{RebaseDataFrames()} 更新页表帧号：
+
+\begin{lstlisting}[caption={Expand 中调用 RebaseDataFrames}]
+pProcess->p_addr = newAddress;
+
+/* 离散化：先更新页表帧号，再拷贝数据 */
+long frameDelta = ((long)newAddress - (long)oldAddress) >> 12;
+u.u_MemoryDescriptor.RebaseDataFrames(frameDelta);
+
+for (unsigned int i = 0; i < oldSize; i++)
+{
+    Utility::CopySeg(oldAddress + i, newAddress + i);
+}
+\end{lstlisting}
+
+\subsection{步骤七：修改 ProcessManager::NewProc() —— fork 时维护子进程页表}
+
+\texttt{fork()} 创建子进程时，将父进程页表拷贝给子进程后，需要将子进程的 RW 页帧号从父进程的物理基址平移到子进程的物理基址：
+
+\begin{lstlisting}[caption={NewProc 中的离散化 fork}]
+child->p_addr = desAddress;
+
+/* 计算帧号偏移量 */
+long frameDelta = ((long)desAddress >> 12)
+    - ((long)current->p_addr >> 12);
+
+/* 平移子进程页表中所有 RW 页的帧号 */
+PageTableEntry* entries = (PageTableEntry*)childTable;
+unsigned int total = Machine::USER_PAGE_TABLE_CNT
+    * PageTable::ENTRY_CNT_PER_PAGETABLE;
+for (unsigned int k = 0; k < total; k++)
+{
+    if (entries[k].m_Present && entries[k].m_ReadWriter)
+    {
+        entries[k].m_PageBaseAddress =
+            (unsigned int)((long)entries[k].m_PageBaseAddress
+            + frameDelta);
+    }
+}
+
+/* 将父进程内容拷贝到子进程物理块 */
+int n = current->p_size;
+while (n--)
+{
+    Utility::CopySeg(srcAddress++, desAddress++);
+}
+\end{lstlisting}
+
+%=====================================================================
+\section{实验分析}
+%=====================================================================
+
+\subsection{改造前后对比}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{p{3cm}p{5cm}p{5cm}}
+\toprule
+\textbf{方面} & \textbf{改造前（相对偏移）} & \textbf{改造后（绝对帧号）} \\
+\midrule
+页表存储内容 & 各段相对于基址的偏移量 & 绝对物理帧号 \\
+\texttt{MapToPageTable} & 需区分 RO/RW 分别加 \texttt{textPF}/\texttt{pAddrPF} & 直接拷贝帧号，逻辑统一 \\
+U bit 设置 & 未设置 & 正确设置 \texttt{m\_UserSupervisor = 1} \\
+\texttt{Expand} 支持 & 页表帧号隐式依赖 \texttt{p\_addr} & 显式调用 \texttt{RebaseDataFrames} \\
+\texttt{fork} 支持 & 拷贝偏移量即可 & 拷贝后需平移 RW 页帧号 \\
+代码复杂度 & 较高 & 较低 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{U bit 的作用}
+
+x86 页表项中的 U/S（User/Supervisor）位决定了该页的访问权限：
+\begin{itemize}
+    \item \textbf{U bit = 0}：仅内核态（CPL 0--2）可访问，用户态访问会触发页故障（Page Fault）。
+    \item \textbf{U bit = 1}：用户态（CPL 3）和内核态均可访问。
+\end{itemize}
+
+原有实现中未设置 U bit，导致用户态进程无法正常访问自身的虚拟地址空间。本次改造在 \texttt{MapEntry()} 和 \texttt{MapToPageTable()} 中统一设置 \texttt{m\_UserSupervisor = 1}，解决了此问题。
+
+\subsection{文本段共享机制}
+
+离散化方案中，文本段（RO）页的帧号直接来自 \texttt{x\_caddr}，由所有共享该文本段的进程使用相同的物理帧。当进程执行 \texttt{Expand()} 或 \texttt{fork()} 时，\texttt{RebaseDataFrames()} 只修改 RW 页（通过检查 \texttt{m\_ReadWriter} 标志），RO 页帧号保持不变，确保文本段共享不被破坏。
+
+%=====================================================================
+\section{实验结果}
+%=====================================================================
+
+\begin{enumerate}
+    \item 成功完成内存离散化改造，页表中直接存储绝对物理帧号。
+    \item \texttt{MapToPageTable()} 逻辑大幅简化，不再需要运行时计算偏移。
+    \item 正确设置了 U bit，用户态进程可以正常访问自身虚拟地址空间。
+    \item \texttt{fork()} 场景下子进程页表帧号正确维护，父子进程内存独立。
+    \item \texttt{Expand()} 场景下页表帧号随 \texttt{p\_addr} 变化正确平移。
+    \item 文本段共享机制不受影响，RO 页帧号在 \texttt{RebaseDataFrames} 中被跳过。
+\end{enumerate}
+
+%=====================================================================
+\section{实验总结与心得}
+%=====================================================================
+
+本次实验对 UNIX V6++ 操作系统的内存管理模块进行了离散化改造，核心思想是将页表中存储的\textbf{相对偏移量替换为绝对物理帧号}。这一改造带来了以下收益：
+
+\begin{enumerate}
+    \item \textbf{简化了地址映射逻辑}：\texttt{MapToPageTable()} 从需要区分 RO/RW 分别计算偏移，简化为统一的帧号拷贝，代码更清晰、更不易出错。
+    \item \textbf{修复了 U bit 缺失问题}：原有实现未设置页表项的 User/Supervisor 位，用户态进程实际上无法访问自身内存，这是一个潜在的严重 bug。
+    \item \textbf{显式管理帧号变化}：通过 \texttt{RebaseDataFrames()} 函数，在 \texttt{Expand()} 和 \texttt{fork()} 等物理内存地址发生变化的场景中，显式地调整页表帧号，使内存管理的语义更加明确。
+\end{enumerate}
+
+通过本次实验，加深了对 x86 分页机制、UNIX V6 进程内存布局以及 fork/exec/expand 等系统调用中内存管理细节的理解。
+
+%=====================================================================
+\section{实验截图}
+%=====================================================================
+
+% 请在此处插入实验截图。编译 PDF 后，将截图文件放在同一目录下，
+% 取消下方注释并修改文件名即可。
+
+\begin{center}
+\textit{（请在此处粘贴实验截图）}
+\end{center}
+
+% 示例：取消注释以下代码并替换为实际截图文件名
+%
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.9\textwidth]{screenshot1.png}
+%     \caption{系统启动与进程创建}
+% \end{figure}
+%
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.9\textwidth]{screenshot2.png}
+%     \caption{fork 后父子进程页表验证}
+% \end{figure}
+%
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.9\textwidth]{screenshot3.png}
+%     \caption{Expand 后页表帧号更新验证}
+% \end{figure}
+
+\end{document}
